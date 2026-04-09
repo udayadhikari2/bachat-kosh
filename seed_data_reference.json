@@ -1,0 +1,50 @@
+{
+  "organization": {
+    "name": "Sahabat Bachat Kosh",
+    "bankDetails": {
+      "bankName": "Laxmi Bank",
+      "accountNo": "11020015299",
+      "accountName": "Bibek Adhikari / Sajan Gurung"
+    },
+    "config": {
+      "monthlyDepositAmount": 1000,
+      "lateFee": 30,
+      "interestRate": 12,
+      "penaltyRate": 20,
+      "deadlineDay": 30
+    },
+    "isActive": true,
+    "_id": "69d7e6c265c25d8c4c2b801a",
+    "__v": 0
+  },
+  "users": [
+    {
+      "name": "Super Developer",
+      "email": "dev@example.com",
+      "role": "DEVELOPER",
+      "password": "User@123",
+      "accountNumber": "N/A"
+    },
+    {
+      "name": "Organization Admin",
+      "email": "admin@example.com",
+      "role": "ADMIN",
+      "password": "User@123",
+      "accountNumber": "N/A"
+    },
+    {
+      "name": "Member One",
+      "email": "member1@example.com",
+      "role": "USER",
+      "password": "User@123",
+      "accountNumber": "KOSH-001"
+    },
+    {
+      "name": "Member Two",
+      "email": "member2@example.com",
+      "role": "USER",
+      "password": "User@123",
+      "accountNumber": "KOSH-002"
+    }
+  ]
+}
