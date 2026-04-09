@@ -6,17 +6,26 @@ import { PiggyBank, Plus, CheckCircle2, XCircle, Clock, FileText } from "lucide-
 import PageHeader from "@/components/dashboard/PageHeader";
 import SubmitDepositForm from "@/components/dashboard/SubmitDepositForm";
 
+interface DepositRecord {
+  _id: string;
+  userName: string;
+  amount: number;
+  month: string;
+  status: string;
+  date: string;
+}
+
 export default function DepositsPage() {
   const { data: session } = useSession();
   const [showModal, setShowModal] = useState(false);
-  const [deposits, setDeposits] = useState([]);
+  const [deposits, setDeposits] = useState<DepositRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const user = session?.user as any;
   const isAdmin = user?.role === "ADMIN";
 
   // Mock data for UI demonstration until backend actions are fully wired
-  const mockDeposits = [
+  const mockDeposits: DepositRecord[] = [
     { _id: "1", userName: "Member One", amount: 1000, month: "Chaitra 2080", status: "PENDING", date: "2080-12-05" },
     { _id: "2", userName: "Member Two", amount: 1000, month: "Chaitra 2080", status: "APPROVED", date: "2080-12-04" },
   ];

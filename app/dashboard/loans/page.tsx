@@ -5,16 +5,26 @@ import { useSession } from "next-auth/react";
 import { HandCoins, Plus, CheckCircle2, AlertCircle, TrendingUp, ShieldCheck, ArrowRight } from "lucide-react";
 import PageHeader from "@/components/dashboard/PageHeader";
 
+interface LoanRecord {
+  _id: string;
+  userName: string;
+  amount: number;
+  interestRate: number;
+  status: string;
+  nextPayment?: string;
+  progress: number;
+}
+
 export default function LoansPage() {
   const { data: session } = useSession();
-  const [loans, setLoans] = useState([]);
+  const [loans, setLoans] = useState<LoanRecord[]>([]);
   const [loading, setLoading] = useState(true);
 
   const user = session?.user as any;
   const isAdmin = user?.role === "ADMIN";
 
   // Mock data for UI demonstration
-  const mockLoans = [
+  const mockLoans: LoanRecord[] = [
     { _id: "1", userName: "Member One", amount: 50000, interestRate: 12, status: "ACTIVE", nextPayment: "2081-01-15", progress: 45 },
     { _id: "2", userName: "Recent Applicant", amount: 25000, interestRate: 12, status: "PENDING_APPROVAL", progress: 0 },
   ];
