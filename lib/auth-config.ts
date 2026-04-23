@@ -16,35 +16,53 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          throw new Error("Invalid credentials");
+        try {
+          if (!credentials?.email || !credentials?.password) {
+            throw new Error("Invalid credentials");
+          }
+
+          await connectDB();
+          const email = credentials.email.toLowerCase().trim();
+          console.log("\n************************************");
+          console.log("LOGIN ATTEMPT:", email);
+          
+          const user = await User.findOne({ email });
+          console.log("USER FOUND IN DB:", !!user);
+
+          if (!user || !user.isActive) {
+            console.log("AUTH FAILED: User not found or inactive");
+            console.log("************************************\n");
+            throw new Error("User not found or inactive");
+          }
+
+          // Check password
+          const isPasswordCorrect = await bcrypt.compare(
+            credentials.password,
+            user.password || ""
+          );
+          console.log("PASSWORD MATCH:", isPasswordCorrect);
+
+          if (!isPasswordCorrect) {
+            console.log("AUTH FAILED: Invalid password");
+            console.log("************************************\n");
+            throw new Error("Invalid password");
+          }
+
+          console.log("AUTH SUCCESSFUL");
+          console.log("************************************\n");
+
+          return {
+            id: user._id.toString(),
+            email: user.email,
+            name: user.name,
+            role: user.role,
+            organizationId: user.organizationId?.toString(),
+          };
+        } catch (error) {
+          console.error("\n!!!!!!!! AUTH ERROR !!!!!!!!\n", error);
+          console.log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+          return null;
         }
-
-        await connectDB();
-
-        const user = await User.findOne({ email: credentials.email });
-
-        if (!user || !user.isActive) {
-          throw new Error("User not found or inactive");
-        }
-
-        // Check password if available (users created by dev/admin will have a password set)
-        const isPasswordCorrect = await bcrypt.compare(
-          credentials.password,
-          user.password || ""
-        );
-
-        if (!isPasswordCorrect) {
-          throw new Error("Invalid password");
-        }
-
-        return {
-          id: user._id.toString(),
-          email: user.email,
-          name: user.name,
-          role: user.role,
-          organizationId: user.organizationId?.toString(),
-        };
       },
     }),
   ],

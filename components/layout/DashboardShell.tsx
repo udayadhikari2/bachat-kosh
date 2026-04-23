@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Menu, X, Bell } from "lucide-react";
 import Sidebar from "@/components/layout/Sidebar";
+import NotificationDrawer from "@/components/dashboard/NotificationDrawer";
 
 interface DashboardShellProps {
   children: React.ReactNode;
@@ -11,6 +12,7 @@ interface DashboardShellProps {
 
 export default function DashboardShell({ children, user }: DashboardShellProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
 
   return (
     <div className="flex h-screen bg-slate-950 overflow-hidden text-slate-100 font-sans">
@@ -61,8 +63,10 @@ export default function DashboardShell({ children, user }: DashboardShellProps) 
             </div>
             
             <div className="flex items-center gap-3 pl-4 sm:pl-6 border-l border-slate-800/50">
-              <button className="p-2.5 text-slate-400 hover:text-white hover:bg-slate-900 rounded-xl transition-all relative group">
-                <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-slate-950 group-hover:scale-125 transition-transform"></span>
+              <button 
+                onClick={() => setNotificationsOpen(true)}
+                className="p-2.5 text-slate-400 hover:text-white hover:bg-slate-900 rounded-xl transition-all relative group"
+              >
                 <Bell className="w-5 h-5" />
               </button>
               <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-600 p-[1px] shadow-lg shadow-emerald-500/10">
@@ -79,6 +83,13 @@ export default function DashboardShell({ children, user }: DashboardShellProps) 
           {children}
         </div>
       </main>
+
+      <NotificationDrawer 
+        isOpen={notificationsOpen}
+        onClose={() => setNotificationsOpen(false)}
+        userId={user.id}
+        role={user.role}
+      />
     </div>
   );
 }

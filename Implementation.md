@@ -10,102 +10,83 @@ A multi-tenant, role-based finance management system for mutual funds (Kosh), bu
 > - **Database**: Mongoose (MongoDB) for all models.
 > - **Routing**: Unified `/dashboard` route. UI elements gated by role/type.
 > - **Calendar**: Integration of Nepali Calendar for deposit deadlines.
-> - **Notifications**: Dual-channel (In-app Bell + Email).
-> - **Reports**: Monthly Excel export.
-> - **User Management**: Strictly hierarchical. Developer adds Orgs/Users; Admin adds Users.
+> - **Notifications**: Dual-channel (In-app Bell + Email), with role-based and multi-individual targeting.
+> - **Reports**: Multi-format exports (CSV, XLSX, PDF) for treasury and member activities.
+> - **User Management**: Strictly hierarchical. Developer adds Orgs/Users; Admin adds Users. CRUD, search, filtering, and status management (Active/Disabled) enabled.
+> - **Bank QR**: Organizations can upload a bank QR code for payments.
+> - **Exports**: Data can be exported in CSV, XLSX, and PDF formats.
+> - **Developer Safeguards**: Protected global account that cannot be deleted or disabled. Restricted UI creation of developer roles.
+> - **Advanced Roles**: Users can be designated as **Loan Approvers** or **Secondary Admins** regardless of their base role.
+> - **Selection-First Policy**: To protect system performance, User and Notification directories remain empty until an explicit filter (Organization, Role, or Status) is selected.
+> - **Global Pagination**: Advanced pagination (Page Size, Indexing, Next/Prev) is implemented across Organizations, Users, and Notification modules.
+> - **Admin Notifications**: Admins can broadcast messages to their own organization members and System Developers. Global targeting across other organizations is restricted.
+> - **Restricted Admin Privacy**: Admins cannot send notifications to themselves or other primary administrators. They can only target **Secondary Admins** and members of their own organization.
+> - **Treasury Centralization**: Deposits are managed through a centralized Admin console with bulk verification, correction tools, and automated member alerting.
 
 ## Proposed Changes
 
 ### 1. Database & Models (Mongoose)
 
-#### [NEW] [Organization.ts](file:///Users/arm/Desktop/root/hamro-bachat/lib/models/Organization.ts)
-
-- `name`: String
-- `bankDetails`: { accountNo, accountName, bankName }
-- `config`: { monthlyDepositAmount, lateFee, interestRate, penaltyRate, deadlineDay }
-- `isActive`: Boolean
-
-#### [NEW] [User.ts](file:///Users/arm/Desktop/root/hamro-bachat/lib/models/User.ts)
+#### [MODIFY] [User.ts](file:///d:/Projects/bachat/hamro-bachat/lib/models/User.ts)
 
 - `email`, `password` (hashed), `name`
 - `role`: 'DEVELOPER' | 'ADMIN' | 'USER'
 - `organizationId`: ObjectId
 - `accountNumber`: String (Assigned by Developer)
+- `committeeRole`: 'Adhyaksha' | 'Upadhyaksha' | 'Sachib' | 'Sadasya'
+- `isLoanApprover`: Boolean (Designated loan verify rank)
+- `isSecondaryAdmin`: Boolean (Designated management assistance)
 - `isActive`: Boolean
 
-#### [NEW] [Deposit.ts](file:///Users/arm/Desktop/root/hamro-bachat/lib/models/Deposit.ts)
+#### [NEW] [Notification.ts](file:///d:/Projects/bachat/hamro-bachat/lib/models/Notification.ts)
 
-- `userId`, `organizationId`
-- `amount`, `status` (PENDING, APPROVED, REJECTED)
-- `month`: String (e.g., "2080-05")
-- `proof`: String (Base64 Image)
-- `fineApplied`: Number
-- `verifiedBy`: ObjectId (Admin)
-
-#### [NEW] [Loan.ts](file:///Users/arm/Desktop/root/hamro-bachat/lib/models/Loan.ts)
-
-- `userId`, `amount`, `status`
-- `activatedAt`, `dueDate`
-- `interestEarned`, `penaltyEarned`
-- `payments`: [{ date, amount, type }]
+- `senderId`: ObjectId (User)
+- `recipientId`: ObjectId (User - Optional)
+- `targetRole`: 'ADMIN' | 'USER' | 'ALL'
+- `title`, `message`: String
+- `isRead`: Boolean
+- `type`: 'INFO' | 'WARNING' | 'SUCCESS'
 
 ---
 
-### 2. Authentication & Authorization
+### 2. Admin & User Experience
 
-#### [NEW] [auth.ts](file:///Users/arm/Desktop/root/hamro-bachat/auth.ts)
+#### [MODIFY] [AdminView.tsx](file:///d:/Projects/bachat/hamro-bachat/components/dashboard/AdminView.tsx)
+- **Financial Oversight Terminal**: Replaced the member registry with a compact status bar showing real-time ledger metrics.
+- **Verification Queues**: Dedicated pending stacks for Deposits and Loans to streamline administrative workflows.
 
-- `CredentialsProvider` for Email/Password.
-- Custom `authorize` logic checking manual user creation status.
-- Session includes `user.role` and `user.organizationId`.
-
-#### [NEW] [middleware.ts](file:///Users/arm/Desktop/root/hamro-bachat/middleware.ts)
-
-- Guard for `/dashboard`. Redirect to `/login` if unauthenticated.
-
----
-
-### 3. Service Layer (Business Logic)
-
-#### [NEW] [nepali-date.ts](file:///Users/arm/Desktop/root/hamro-bachat/lib/utils/nepali-date.ts)
-
-- Wrapper for Nepali date conversion and month-end detection.
-
-#### [NEW] [finance-engine.ts](file:///Users/arm/Desktop/root/hamro-bachat/lib/services/finance-engine.ts)
-
-- Interest calculation method (12% daily).
-- Penalty calculation (20% after 180 days).
-- Automation hooks for month-end reconciliation.
+#### [MODIFY] [UsersPage](file:///d:/Projects/bachat/hamro-bachat/app/dashboard/users/page.tsx)
+- **Status Indicators**: Pulsing status lights for better visibility of active/disabled nodes.
+- **Access Rank**: Combined view showing role + sub-designations (e.g., ADMIN • Sec. Admin).
+- **Notification Deep-Linking**: New "Send Broadcast" action that pre-selects a user in the Notification Center.
 
 ---
 
-### 4. UI Components (Dashboard Layout)
+### 3. Treasury & Deposit Management
 
-#### [NEW] [DashboardContainer.tsx](file:///Users/arm/Desktop/root/hamro-bachat/app/dashboard/page.tsx)
-
-- Server component to fetch role.
-- Conditional rendering: `<DeveloperView />`, `<AdminView />`, or `<UserView />`.
-
-#### [NEW] [EmailService.ts](file:///Users/arm/Desktop/root/hamro-bachat/lib/services/EmailService.ts)
-
-- Template-based emails for deposit approvals and loan updates.
+#### [MODIFY] [DepositsPage](file:///d:/Projects/bachat/hamro-bachat/app/dashboard/deposits/page.tsx)
+- **Hierarchical Controls**: 
+    - Admins: Can verify, reject, and correct any organization transmission.
+    - Members: Can only view their own history and submit new proofs.
+- **Bulk Pipeline**: Processing engine for multi-item approval/rejection.
+- **Advanced Audit**: 
+    - Date range filtering (From - To).
+    - Identity-based search.
+    - Export engine (CSV, XLSX Ledger, PDF Report).
+- **Automated Feedback**: Real-time notifications dispatched to members upon verification decisions.
 
 ---
-
-## Open Questions
-
-1.  **First User**: Since registration is closed, how would you like to create the first Developer account? (I can provide a temporary seed script `npm run seed`).
-2.  **Email Provider**: Do you have an SMTP server or service like SendGrid/Resend to use for notifications?
 
 ## Verification Plan
 
-### Automated Tests
-
-- Mongoose validation tests for unique emails and mandatory organization IDs.
-- Logic tests for Nepali date month-end boundaries and interest math accuracy.
-
 ### Manual Verification
 
-- Log in as Developer -> Create Organization -> Create Admin.
-- Log in as Admin -> Create User.
-- Log in as User -> Submit Deposit screenshot -> Admin Verify.
+- Verify empty-state loading for Users and Notifications center.
+- Verify sub-role assignment in the Add User form.
+- Verify status lights and Access Rank display in the Directory.
+- Test deep-linking from User Directory -> Notification Center.
+- Confirm Admin Dashboard is clean of member creation buttons.
+- Confirm Admin only sees their own organization members in the Notification Center.
+- Confirm Primary Admins are hidden from an Admin's view in the recipient list.
+- **Treasury Test**: Perform a bulk approval and verify the "Net Assets" stat updates correctly.
+- **Export Test**: Download a PDF report and verify the Emerald green header and grid styling.

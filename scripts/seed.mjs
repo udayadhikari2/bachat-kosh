@@ -2,6 +2,10 @@ import mongoose from "mongoose";
 import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 import fs from "fs";
+import dns from "dns";
+
+// Fix for Atlas SRV resolution issues - use Google DNS
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 
 // Load .env
 dotenv.config();
@@ -21,6 +25,7 @@ const orgSchema = new mongoose.Schema({
     accountNo: String,
     accountName: String,
   },
+  bankQr: String,
   config: {
     monthlyDepositAmount: Number,
     lateFee: Number,
@@ -52,9 +57,9 @@ async function seed() {
     console.log("Connecting to MongoDB...");
     await mongoose.connect(MONGO_URL);
 
-    // 1. Clear existing data (Optional, handle with care)
-    // await Organization.deleteMany({});
-    // await User.deleteMany({});
+    // 1. Clear existing data
+    await Organization.deleteMany({});
+    await User.deleteMany({});
 
     console.log("Creating Sample Organization...");
     const org = await Organization.create({
@@ -64,6 +69,7 @@ async function seed() {
         accountNo: "11020015299",
         accountName: "Bibek Adhikari / Sajan Gurung",
       },
+      bankQr: "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", // Tiny pixel placeholder
       config: {
         monthlyDepositAmount: 1000,
         lateFee: 30,
@@ -75,7 +81,7 @@ async function seed() {
     });
 
     console.log("Creating Users...");
-    const hashedPassword = await bcrypt.hash("a", 12);
+    const hashedPassword = await bcrypt.hash("User@123", 12);
 
     const usersToCreate = [
       {

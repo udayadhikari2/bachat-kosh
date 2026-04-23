@@ -3,10 +3,13 @@ import mongoose, { Schema, Document } from "mongoose";
 export interface IDeposit extends Document {
   userId: mongoose.Types.ObjectId;
   organizationId: mongoose.Types.ObjectId;
+  depositType: "MONTHLY" | "SERVICE_CHARGE" | "LOAN_INTEREST";
   amount: number;
-  month: string; // e.g., "2080-05" (Nepali Month)
+  advancedPayment: number; // Extra amount paid above the required deposit
+  creditUsed: number; // Amount covered by stored global credits
+  month: string;
   depositDate: Date;
-  proof: string; // Base64 or Image URL
+  proof: string;
   status: "PENDING" | "APPROVED" | "REJECTED";
   fineApplied: number;
   verifiedBy?: mongoose.Types.ObjectId;
@@ -23,7 +26,14 @@ const DepositSchema: Schema = new Schema(
       ref: "Organization",
       required: true,
     },
+    depositType: { 
+      type: String, 
+      enum: ["MONTHLY", "SERVICE_CHARGE", "LOAN_INTEREST"],
+      default: "MONTHLY"
+    },
     amount: { type: Number, required: true },
+    advancedPayment: { type: Number, default: 0 }, // Overpayment tracked per deposit
+    creditUsed: { type: Number, default: 0 }, // Portion paid via global balance
     month: { type: String, required: true },
     depositDate: { type: Date, default: Date.now },
     proof: { type: String },

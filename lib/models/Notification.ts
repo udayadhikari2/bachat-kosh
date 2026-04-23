@@ -1,30 +1,34 @@
 import mongoose, { Schema, Document } from "mongoose";
 
 export interface INotification extends Document {
-  userId: mongoose.Types.ObjectId;
-  organizationId?: mongoose.Types.ObjectId;
+  senderId: mongoose.Types.ObjectId;
+  recipientId?: mongoose.Types.ObjectId; // Optional for directed notification
+  targetRole?: "ADMIN" | "USER" | "ALL"; // Role-based broadcasting
   title: string;
   message: string;
-  type: "INFO" | "SUCCESS" | "WARNING" | "ERROR";
   isRead: boolean;
-  link?: string;
+  type: "INFO" | "WARNING" | "SUCCESS";
   createdAt: Date;
   updatedAt: Date;
 }
 
 const NotificationSchema: Schema = new Schema(
   {
-    userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
-    organizationId: { type: Schema.Types.ObjectId, ref: "Organization" },
+    senderId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+    recipientId: { type: Schema.Types.ObjectId, ref: "User" },
+    targetRole: { 
+      type: String, 
+      enum: ["ADMIN", "USER", "ALL"],
+      default: "ALL"
+    },
     title: { type: String, required: true },
     message: { type: String, required: true },
-    type: {
-      type: String,
-      enum: ["INFO", "SUCCESS", "WARNING", "ERROR"],
-      default: "INFO",
-    },
     isRead: { type: Boolean, default: false },
-    link: { type: String },
+    type: { 
+      type: String, 
+      enum: ["INFO", "WARNING", "SUCCESS"],
+      default: "INFO"
+    },
   },
   { timestamps: true }
 );

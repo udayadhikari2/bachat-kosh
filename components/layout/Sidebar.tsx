@@ -11,7 +11,8 @@ import {
   Settings, 
   LogOut,
   Bell,
-  FileText
+  FileText,
+  ShieldCheck
 } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { clsx, type ClassValue } from "clsx";
@@ -66,10 +67,22 @@ export default function Sidebar({ role }: SidebarProps) {
       roles: ["DEVELOPER", "ADMIN"],
     },
     {
+      title: "Notifications",
+      icon: Bell,
+      href: "/dashboard/notifications",
+      roles: ["DEVELOPER", "ADMIN"],
+    },
+    {
       title: "Settings",
       icon: Settings,
       href: "/dashboard/settings",
       roles: ["DEVELOPER", "ADMIN", "USER"],
+    },
+    {
+      title: "Vault Sync",
+      icon: ShieldCheck,
+      href: "/dashboard/external-funds",
+      roles: ["ADMIN"],
     },
   ];
 

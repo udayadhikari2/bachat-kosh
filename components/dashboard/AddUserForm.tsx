@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createUser } from "@/lib/actions/user";
+import { createUser, updateUser } from "@/lib/actions/user";
 import { 
   Loader2, 
   X, 
@@ -15,16 +15,20 @@ import {
 
 interface AddUserFormProps {
   onClose: () => void;
-  organizations?: any[]; // Only for Developer
-  fixedOrgId?: string;   // Only for Admin
-  defaultRole?: "ADMIN" | "USER";
+  organizations?: any[]; 
+  fixedOrgId?: string;   
+  defaultRole?: "DEVELOPER" | "ADMIN" | "USER";
+  initialData?: any;
+  isDeveloperMode?: boolean;
 }
 
 export default function AddUserForm({ 
   onClose, 
   organizations = [], 
   fixedOrgId,
-  defaultRole = "USER"
+  defaultRole = "USER",
+  initialData,
+  isDeveloperMode = false
 }: AddUserFormProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -35,11 +39,13 @@ export default function AddUserForm({
     setError("");
 
     const formData = new FormData(event.currentTarget);
-    if (fixedOrgId) {
+    if (fixedOrgId && !formData.get("organizationId")) {
       formData.append("organizationId", fixedOrgId);
     }
     
-    const result = await createUser(formData);
+    const result = initialData
+      ? await updateUser(initialData._id, formData)
+      : await createUser(formData);
 
     if (result.success) {
       onClose();
@@ -55,7 +61,7 @@ export default function AddUserForm({
         <div className="flex justify-between items-center p-6 border-b border-slate-800 bg-slate-900/50">
           <h2 className="text-xl font-bold text-white flex items-center">
             <UserPlus className="w-5 h-5 mr-2 text-emerald-400" />
-            Add New Member
+            {initialData ? "Edit User Account" : "Add New Member"}
           </h2>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <X className="w-6 h-6" />
@@ -76,6 +82,7 @@ export default function AddUserForm({
               <input
                 name="name"
                 required
+                defaultValue={initialData?.name}
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
                 placeholder="John Doe"
               />
@@ -90,6 +97,7 @@ export default function AddUserForm({
                     name="email"
                     type="email"
                     required
+                    defaultValue={initialData?.email}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
                     placeholder="john@example.com"
                   />
@@ -101,7 +109,7 @@ export default function AddUserForm({
                   <Shield className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <select
                     name="role"
-                    defaultValue={defaultRole}
+                    defaultValue={initialData?.role || defaultRole}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all appearance-none"
                   >
                     <option value="ADMIN">Admin (Manager)</option>
@@ -119,6 +127,7 @@ export default function AddUserForm({
                   <select
                     name="organizationId"
                     required
+                    defaultValue={initialData?.organizationId?._id || initialData?.organizationId || ""}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all appearance-none"
                   >
                     <option value="">Select Organization</option>
@@ -135,6 +144,7 @@ export default function AddUserForm({
                 <label className="text-sm font-medium text-slate-300">Account Number</label>
                 <input
                   name="accountNumber"
+                  defaultValue={initialData?.accountNumber}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
                   placeholder="KOSH-001"
                 />
@@ -145,25 +155,42 @@ export default function AddUserForm({
                   <Key className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                   <input
                     name="password"
-                    defaultValue="User@123"
+                    defaultValue={initialData ? "" : "User@123"}
                     className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
-                    placeholder="User@123"
+                    placeholder={initialData ? "Leave blank to keep current" : "User@123"}
                   />
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center space-x-2 pt-2">
-              <input
-                type="checkbox"
-                name="isLoanApprover"
-                id="isLoanApprover"
-                value="true"
-                className="w-4 h-4 rounded border-slate-800 bg-slate-950 text-emerald-500 focus:ring-emerald-500/50"
-              />
-              <label htmlFor="isLoanApprover" className="text-sm font-medium text-slate-300">
-                Designate as Loan Approver
-              </label>
+            <div className="flex flex-wrap gap-4 pt-2">
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="isLoanApprover"
+                  id="isLoanApprover"
+                  value="true"
+                  defaultChecked={initialData?.isLoanApprover}
+                  className="w-4 h-4 rounded border-slate-800 bg-slate-950 text-emerald-500 focus:ring-emerald-500/50"
+                />
+                <label htmlFor="isLoanApprover" className="text-sm font-medium text-slate-300">
+                  Loan Approver
+                </label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  name="isSecondaryAdmin"
+                  id="isSecondaryAdmin"
+                  value="true"
+                  defaultChecked={initialData?.isSecondaryAdmin}
+                  className="w-4 h-4 rounded border-slate-800 bg-slate-950 text-emerald-500 focus:ring-emerald-500/50"
+                />
+                <label htmlFor="isSecondaryAdmin" className="text-sm font-medium text-slate-300">
+                  Secondary Admin
+                </label>
+              </div>
             </div>
           </div>
 
@@ -180,7 +207,7 @@ export default function AddUserForm({
               disabled={loading}
               className="bg-emerald-600 hover:bg-emerald-500 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-emerald-600/20 transition-all flex items-center disabled:opacity-50"
             >
-              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Create Member"}
+              {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (initialData ? "Update Account" : "Create Member")}
             </button>
           </div>
         </form>

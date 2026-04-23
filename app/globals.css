@@ -23,7 +23,12 @@ body {
   font-family: var(--font-sans);
 }
 
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
   font-family: var(--font-serif);
 }
 
@@ -53,8 +58,26 @@ h1, h2, h3, h4, h5, h6 {
   background: #334155;
 }
 
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.animate-blink {
+  animation: blink 1.5s ease-in-out infinite;
+}
+
 @layer base {
   * {
     @apply border-slate-800;
   }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+.animate-blink {
+  animation: blink 1.5s ease-in-out infinite;
 }

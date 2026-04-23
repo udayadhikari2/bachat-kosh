@@ -1,5 +1,5 @@
 import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth-config";
+import { authOptions } from "@/lib/auth";
 import DeveloperView from "@/components/dashboard/DeveloperView";
 import AdminView from "@/components/dashboard/AdminView";
 import UserView from "@/components/dashboard/UserView";

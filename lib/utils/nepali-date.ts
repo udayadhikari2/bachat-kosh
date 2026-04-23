@@ -1,73 +1,65 @@
-import { adToBs, bsToAd } from "ad-bs-converter";
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const adbs = require('ad-bs-converter') as {
+  ad2bs: (date: string) => { en: { year: number; month: number; day: number; totalDaysInMonth: number }; np: { year: number; month: number; day: number } };
+  bs2ad: (date: string) => { year: number; month: number; day: number; dayOfWeek: number };
+};
 
-/**
- * Utility for Nepali Calendar (Bikram Sambat)
- * Integrates with ad-bs-converter
- */
+export const NEPALI_MONTHS = [
+  "Baisakh", "Jestha", "Ashadh", "Shrawan", "Bhadra", "Ashwin", 
+  "Kartik", "Mangsir", "Poush", "Magh", "Falgun", "Chaitra"
+];
 
-export interface NepaliDate {
-  en: {
-    year: number;
-    month: number;
-    day: number;
-  };
-  ne: {
-    year: number;
-    month: number;
-    day: number;
-    strMonth: string;
-    dayOfWeek: string;
-  };
-}
+export const NEPALI_MONTHS_NE = [
+  "बैशाख", "जेठ", "असार", "साउन", "भदौ", "असोज", 
+  "कार्तिक", "मंसिर", "पुष", "माघ", "फागुन", "चैत"
+];
 
-export function getCurrentNepaliMonthYear() {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth() + 1;
-  const day = today.getDate();
+export const NEPALI_WEEKDAYS = [
+  "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
+];
 
-  const bs = adToBs(`${year}/${month}/${day}`);
+export function adToBs(date: Date | string) {
+  const d = new Date(date);
+  if (isNaN(d.getTime())) {
+    return {
+      year: 0,
+      month: 1,
+      day: 1,
+      monthName: ""
+    };
+  }
+  const formatted = `${d.getFullYear()}/${(d.getMonth() + 1).toString().padStart(2, '0')}/${d.getDate().toString().padStart(2, '0')}`;
+  const converted = adbs.ad2bs(formatted);
+  if (!converted || !converted.en) {
+    return { year: 0, month: 1, day: 1, monthName: "" };
+  }
   return {
-    year: bs.en.year,
-    month: bs.en.month,
-    formatted: `${bs.en.year}-${String(bs.en.month).padStart(2, "0")}`,
+    year: converted.en.year,
+    month: converted.en.month, // 1-indexed
+    day: converted.en.day,
+    monthName: NEPALI_MONTHS[converted.en.month - 1]
   };
 }
 
-export function isPastDeadline(deadlineDay: number) {
-  const today = new Date();
-  const year = today.getFullYear();
-  const month = today.getMonth() + 1;
-  const day = today.getDate();
-
-  const bs = adToBs(`${year}/${month}/${day}`);
-  return bs.en.day > deadlineDay;
+export function bsToAd(year: number, month: number, day: number) {
+  const formatted = `${year}/${month.toString().padStart(2, '0')}/${day.toString().padStart(2, '0')}`;
+  const converted = adbs.bs2ad(formatted);
+  return new Date(converted.year, converted.month - 1, converted.day);
 }
 
-export function getDaysInNepaliMonth(year: number, month: number): number {
-  // ad-bs-converter doesn't easily expose this, but we can iterate or use a static map
-  // For simplicity, we assume 30 or check the last day of the month by incrementing
-  // But usually, the month ends at 30, 31, or 32 in BS.
-  
-  // A safer way if the library supports it:
-  // For now, we'll return 30 as a default or implement a more robust check if needed.
-  return 30; 
+export function getCurrentNepaliDate() {
+  return adToBs(new Date());
 }
 
-export function getNepaliMonthName(monthIndex: number): string {
-  const months = [
-    "Baishakh",
-    "Jestha",
-    "Ashadh",
-    "Shrawan",
-    "Bhadra",
-    "Ashwin",
-    "Kartik",
-    "Mangsir",
-    "Poush",
-    "Magh",
-    "Falgun",
-    "Chaitra",
-  ];
-  return months[monthIndex - 1] || "Unknown";
+export function getStartDayOfMonth(year: number, month: number) {
+  const formatted = `${year}/${month.toString().padStart(2, '0')}/01`;
+  const converted = adbs.bs2ad(formatted);
+  return converted.dayOfWeek;
+}
+
+export function getDaysInMonth(year: number, month: number) {
+  const formatted = `${year}/${month.toString().padStart(2, '0')}/01`;
+  const ad = adbs.bs2ad(formatted);
+  const bs = adbs.ad2bs(`${ad.year}/${ad.month}/${ad.day}`);
+  return bs.en.totalDaysInMonth;
 }

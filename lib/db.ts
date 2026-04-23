@@ -1,4 +1,18 @@
 import mongoose from "mongoose";
+import dns from "dns";
+
+// DNS Bridge — must run at module init time on the server
+if (typeof window === "undefined") {
+  try {
+    // Point to reliable public DNS to resolve MongoDB SRV records
+    dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
+    if (typeof dns.setDefaultResultOrder === "function") {
+      dns.setDefaultResultOrder("ipv4first");
+    }
+  } catch (err) {
+    console.warn("[DB_DNS_WARN]:", err);
+  }
+}
 
 const MONGODB_URI = process.env.MONGO_URL || "";
 
@@ -13,18 +27,38 @@ if (!cached) {
 }
 
 async function connectDB() {
-  if (cached.conn) {
-    return cached.conn;
-  }
+  // Return existing connection immediately
+  if (cached.conn) return cached.conn;
 
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
+      connectTimeoutMS: 20000,
+      socketTimeoutMS: 45000,
+      family: 4, // Force IPv4 — prevents dual-stack SRV resolution issues
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 15000,
     };
 
-    cached.promise = mongoose.connect(MONGODB_URI, opts).then((mongoose) => {
-      return mongoose;
-    });
+    cached.promise = mongoose
+      .connect(MONGODB_URI, opts)
+      .then((m) => {
+        console.log("[DB] Connection established.");
+        return m;
+      })
+      .catch(async (err) => {
+        console.error("[DB] First connection attempt failed:", err.message);
+        // Reset and try once more with fresh DNS settings
+        cached.promise = null;
+        // Re-apply DNS bridge in case it wasn't set yet
+        dns.setServers(["8.8.8.8", "8.8.4.4"]);
+        dns.setDefaultResultOrder?.("ipv4first");
+        // Retry
+        return mongoose.connect(MONGODB_URI, opts).then((m) => {
+          console.log("[DB] Retry connection established.");
+          return m;
+        });
+      });
   }
 
   try {
