@@ -818,7 +818,7 @@ export async function getFinancialHealth(organizationId: string, month?: string,
       const stats = calculateLoanStats(loan, calculationDate);
       totalActivePrincipalOutstanding += (stats.principalOutstanding || 0);
       totalAccruedInterestActive += ((stats.unpaidBaseInterest || 0) + (stats.unpaidPenaltyInterest || 0));
-      totalOutstandingFeesActive += (stats.unpaidSC + stats.unpaidRenewal);
+      totalOutstandingFeesActive += ((stats.unpaidSC || 0) + (stats.unpaidRenewal || 0));
     });
 
     // 2. Global Financial Aggregates

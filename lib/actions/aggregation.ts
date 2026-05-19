@@ -127,7 +127,7 @@ export async function updateAggregation(id: string, data: any) {
       organizationId: oldVal.organizationId,
       action: "UPDATE_AGGREGATION",
       oldValues: oldVal.toObject(),
-      newValues: updated.toObject(),
+      newValues: updated?.toObject() || {},
       status: "SUCCESS"
     });
 
