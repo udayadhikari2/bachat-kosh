@@ -1,5 +1,18 @@
 export function calculateLoanStats(loan: any, forceEndDate?: Date) {
-  const totalPaid = (loan.payments || []).reduce((sum: number, p: any) => sum + p.amount, 0);
+  const calculationDate = forceEndDate ? new Date(forceEndDate) : new Date();
+  
+  // 1. Reconstruct point-in-time state by filtering the audit trail
+  const filteredPayments = (loan.payments || []).filter((p: any) => new Date(p.date).getTime() <= calculationDate.getTime());
+  const filteredRenewals = (loan.renewalHistory || []).filter((r: any) => new Date(r.date).getTime() <= calculationDate.getTime());
+
+  // Point-in-time Paid trackers
+  const principalPaid = filteredPayments.filter((p: any) => p.type === "PRINCIPAL").reduce((sum: number, p: any) => sum + p.amount, 0);
+  const interestPaid = filteredPayments.filter((p: any) => p.type === "INTEREST").reduce((sum: number, p: any) => sum + p.amount, 0);
+  const penaltyPaid = filteredPayments.filter((p: any) => p.type === "PENALTY").reduce((sum: number, p: any) => sum + p.amount, 0);
+  const scPaid = filteredPayments.filter((p: any) => p.type === "SERVICE_CHARGE").reduce((sum: number, p: any) => sum + p.amount, 0);
+  const renewalPaidTotal = filteredPayments.filter((p: any) => p.type === "RENEWAL").reduce((sum: number, p: any) => sum + p.amount, 0);
+  
+  const totalPaid = filteredPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
 
   if (!loan.activatedAt || loan.status === "PENDING" || loan.status === "APPROVED") {
     const totalAmountToPay = loan.principalAmount + (loan.serviceChargeAmount || 0) + (loan.renewalAmount || 0);
@@ -17,10 +30,21 @@ export function calculateLoanStats(loan: any, forceEndDate?: Date) {
   }
 
   const activatedDate = new Date(loan.activatedAt);
-  // Penalty starts after the Current Deadline (dueDate). Fallback to 180 days if missing.
-  const penaltyDate = loan.dueDate
-    ? new Date(loan.dueDate)
-    : new Date(activatedDate.getTime() + 180 * 24 * 60 * 60 * 1000);
+  
+  // If calculation date is before activation, return zeroed stats
+  if (calculationDate.getTime() < activatedDate.getTime()) {
+    return {
+      totalDays: 0,
+      baseDays: 0,
+      exceedDays: 0,
+      baseInterest: 0,
+      exceedInterest: 0,
+      totalInterest: 0,
+      totalAmountToPay: loan.principalAmount,
+      totalPaid: 0,
+      outstandingAmount: loan.principalAmount
+    };
+  }
 
   const finalEndDate = forceEndDate
     ? new Date(forceEndDate)
@@ -31,11 +55,11 @@ export function calculateLoanStats(loan: any, forceEndDate?: Date) {
         : new Date();
 
   // Extract all events that signify a timeline boundary (Payments & Renewals)
-  const settlementPayments = (loan.payments || [])
+  const settlementPayments = filteredPayments
     .filter((p: any) => p.type === "PRINCIPAL" || p.type === "INTEREST")
     .map((p: any) => ({ date: p.date, type: p.type, amount: p.amount }));
 
-  const renewalEvents = (loan.renewalHistory || [])
+  const renewalEvents = filteredRenewals
     .map((r: any) => ({ date: r.date, type: "RENEWAL", amount: 0 }));
 
   const timelineEvents = [...settlementPayments, ...renewalEvents]
@@ -44,8 +68,7 @@ export function calculateLoanStats(loan: any, forceEndDate?: Date) {
   let currentPrincipal = loan.principalAmount;
   let lastDate = activatedDate;
 
-  // Dynamic Deadline Tracking: Start with the initial deadline and update on each renewal
-  // Initial deadline is usually activatedAt + 180 days (standard policy)
+  // Dynamic Deadline Tracking
   let currentDeadline = loan.dueDate && loan.renewalCount === 0
     ? new Date(loan.dueDate)
     : new Date(activatedDate.getTime() + 180 * 24 * 60 * 60 * 1000);
@@ -64,73 +87,64 @@ export function calculateLoanStats(loan: any, forceEndDate?: Date) {
   const calculatePeriod = (start: Date, end: Date, principal: number, deadline: Date) => {
     if (start.getTime() >= end.getTime() || principal <= 0) return;
 
-    // Check intersection with the deadline active AT THAT TIME
     if (end.getTime() <= deadline.getTime()) {
-      // All base
       const days = getCalendarDays(start, end);
       baseDaysTotal += days;
       totalBaseInterest += Math.ceil((principal * loan.interestRate * days) / (365 * 100));
 
     } else if (start.getTime() >= deadline.getTime()) {
-      // All exceed
       const days = getCalendarDays(start, end);
       exceedDaysTotal += days;
       totalExceedInterest += Math.ceil((principal * (loan.penaltyRate || 20) * days) / (365 * 100));
 
     } else {
-      // Split over the boundary
       const bDays = getCalendarDays(start, deadline);
       const eDays = getCalendarDays(deadline, end);
       baseDaysTotal += bDays;
       exceedDaysTotal += eDays;
       totalBaseInterest += Math.ceil((principal * loan.interestRate * bDays) / (365 * 100));
       totalExceedInterest += Math.ceil((principal * (loan.penaltyRate || 20) * eDays) / (365 * 100));
-
     }
   };
 
   for (const event of timelineEvents) {
-    // Bound the event date to not exceed the final calculation date
     const eventDate = new Date(Math.max(lastDate.getTime(), Math.min(new Date(event.date).getTime(), finalEndDate.getTime())));
 
     if (eventDate.getTime() > lastDate.getTime()) {
-      // Use the deadline that was active BEFORE this event happened
       calculatePeriod(lastDate, eventDate, currentPrincipal, currentDeadline);
       lastDate = eventDate;
     }
 
-    // Update state based on event type
     if (event.type === "PRINCIPAL") {
       currentPrincipal = Math.max(0, currentPrincipal - event.amount);
     } else if (event.type === "RENEWAL") {
-      // A renewal shifts the deadline for ALL SUBSEQUENT periods
-      // The timelineEvents array already includes the newDueDate from history
-      const renewalInfo = (loan.renewalHistory || []).find((r: any) => new Date(r.date).getTime() === new Date(event.date).getTime());
+      const renewalInfo = filteredRenewals.find((r: any) => new Date(r.date).getTime() === new Date(event.date).getTime());
       if (renewalInfo?.newDueDate) {
         currentDeadline = new Date(renewalInfo.newDueDate);
       }
     }
   }
 
-  // Final period from the last event up to the calculation end date (Now, Completed, or Deleted)
   if (lastDate.getTime() < finalEndDate.getTime()) {
     calculatePeriod(lastDate, finalEndDate, currentPrincipal, currentDeadline);
   }
 
   const calculatedTotalInterest = totalBaseInterest + totalExceedInterest;
 
-  // Prevent negative unpaid trackers
-  const unpaidBaseInterest = Math.max(0, Math.ceil(totalBaseInterest) - (loan.interestPaid || 0));
-  const unpaidPenaltyInterest = Math.max(0, Math.ceil(totalExceedInterest) - (loan.penaltyPaid || 0));
+  // Point-in-time unpaid trackers
+  const unpaidBaseInterest = Math.max(0, Math.ceil(totalBaseInterest) - (interestPaid || 0));
+  const unpaidPenaltyInterest = Math.max(0, Math.ceil(totalExceedInterest) - (penaltyPaid || 0));
+  const unpaidSC = Math.max(0, (loan.serviceChargeAmount || 0) - (scPaid || 0));
+  
+  // Reconstruct historical invoiced renewal fees
+  const historicalInvoicedRenewal = filteredRenewals.reduce((sum: number, r: any) => sum + (r.renewalAmount || 0), 0);
+  const unpaidRenewal = Math.max(0, historicalInvoicedRenewal - (renewalPaidTotal || 0));
 
-  const unpaidSC = Math.max(0, (loan.serviceChargeAmount || 0) - (loan.serviceChargePaid || 0));
-  const unpaidRenewal = Math.max(0, (loan.renewalAmount || 0) - (loan.renewalPaid || 0));
-
-  // The true outstanding is active balance + all unpaid accruals
-  const outstandingAmount = Math.ceil((loan.balanceAmount ?? loan.principalAmount) + unpaidBaseInterest + unpaidPenaltyInterest + unpaidSC + unpaidRenewal);
+  // The true historical principal outstanding
+  const principalOutstanding = Math.max(0, loan.principalAmount - principalPaid);
+  const outstandingAmount = Math.ceil(principalOutstanding + unpaidBaseInterest + unpaidPenaltyInterest + unpaidSC + unpaidRenewal);
 
   const totalAmountToPay = totalPaid + outstandingAmount;
-
   const daysSinceLastEvent = getCalendarDays(lastDate, finalEndDate);
 
   return {
@@ -142,11 +156,14 @@ export function calculateLoanStats(loan: any, forceEndDate?: Date) {
     exceedInterest: Math.ceil(totalExceedInterest),
     unpaidBaseInterest,
     unpaidPenaltyInterest,
+    unpaidSC,
+    unpaidRenewal,
     totalInterest: Math.ceil(calculatedTotalInterest),
     totalAmountToPay: Math.ceil(totalAmountToPay),
     totalPaid,
     outstandingAmount,
-    isServiceChargePaid: (loan.serviceChargePaid || 0) >= (loan.serviceChargeAmount || 0),
-    isRenewalChargePaid: (loan.renewalAmount || 0) > 0 ? (loan.payments || []).filter((p: any) => p.type === 'RENEWAL').reduce((sum: number, p: any) => sum + p.amount, 0) >= loan.renewalAmount : true
+    principalOutstanding,
+    isServiceChargePaid: (scPaid || 0) >= (loan.serviceChargeAmount || 0),
+    isRenewalChargePaid: (loan.renewalAmount || 0) > 0 ? (renewalPaidTotal || 0) >= loan.renewalAmount : true
   };
 }

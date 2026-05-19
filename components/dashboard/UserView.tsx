@@ -8,52 +8,63 @@ import {
   Calendar,
   AlertCircle
 } from "lucide-react";
+import { motion } from "framer-motion";
 import SubmitDepositForm from "./SubmitDepositForm";
 
 export default function UserView() {
   const [showDepositModal, setShowDepositModal] = useState(false);
   
-  // Real logic would calculate these from organization configuration
-  const currentMonth = "Chaitra 2080"; 
-  const defaultAmount = 1000;
+  const currentMonthBS = "Chaitra 2080"; 
+  const currentMonthEN = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
   const stats = [
     { label: "My Total Deposit", value: "Rs. 0", icon: Wallet, color: "text-emerald-500" },
     { label: "Active Loan", value: "Rs. 0", icon: AlertCircle, color: "text-red-500" },
-    { label: "Deposit Month", value: "Baishakh", icon: Calendar, color: "text-blue-500" },
+    { label: "Deposit Month", value: currentMonthEN, icon: Calendar, color: "text-blue-500" },
     { label: "Status", value: "Pending", icon: History, color: "text-slate-400" },
   ];
 
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+    <div className="space-y-8">
       <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Member Portal</h1>
-          <p className="text-slate-400 mt-1">Track your savings, apply for loans, and manage your monthly deposits.</p>
-        </div>
-        <button 
+        <motion.div
+          initial={{ x: -20, opacity: 0 }}
+          animate={{ x: 0, opacity: 1 }}
+        >
+          <h1 className="text-3xl font-black text-white tracking-tight">Member Portal</h1>
+          <p className="text-slate-400 mt-1 font-medium">Track your savings, apply for loans, and manage your monthly deposits.</p>
+        </motion.div>
+        <motion.button 
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
           onClick={() => setShowDepositModal(true)}
-          className="flex items-center px-6 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all font-semibold shadow-lg shadow-emerald-500/20 active:scale-95"
+          className="flex items-center px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl transition-all font-black uppercase tracking-widest text-[11px] shadow-[0_10px_30px_rgba(16,185,129,0.3)]"
         >
           Submit Monthly Deposit
-        </button>
+        </motion.button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat, i) => {
           const Icon = stat.icon;
-          const value = i === 2 ? currentMonth : i === 0 ? `Rs. 0` : stat.value;
+          const value = i === 2 ? currentMonthEN : i === 0 ? `Rs. 0` : stat.value;
           return (
-            <div key={i} className="bg-slate-900/50 border border-slate-800 p-6 rounded-2xl backdrop-blur-sm hover:border-slate-700 transition-all duration-300">
+            <motion.div 
+              key={i} 
+              initial={{ y: 20, opacity: 0 }}
+              animate={{ y: 0, opacity: 1 }}
+              transition={{ delay: i * 0.1 }}
+              className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl backdrop-blur-sm hover:border-emerald-500/30 transition-all duration-300 group cursor-default"
+            >
               <div className="flex items-center justify-between">
-                <div className={`p-3 rounded-xl bg-slate-800 ${stat.color}`}>
+                <div className={`p-4 rounded-2xl bg-slate-800 ${stat.color} group-hover:scale-110 transition-transform duration-500 shadow-inner`}>
                   <Icon className="w-6 h-6" />
                 </div>
               </div>
-              <div className="mt-4">
-                <p className="text-slate-400 text-sm font-medium">{stat.label}</p>
-                <p className="text-2xl font-bold text-white mt-1">{value}</p>
+              <div className="mt-6">
+                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">{stat.label}</p>
+                <p className="text-2xl font-black text-white mt-1 tracking-tight">{value}</p>
               </div>
-            </div>
+            </motion.div>
           );
         })}
       </div>
@@ -99,8 +110,6 @@ export default function UserView() {
       {showDepositModal && (
         <SubmitDepositForm 
           onClose={() => setShowDepositModal(false)}
-          currentMonth={currentMonth}
-          defaultAmount={defaultAmount}
         />
       )}
     </div>

@@ -15,6 +15,13 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-inter), ui-sans-serif, system-ui;
   --font-serif: var(--font-outfit), ui-serif, Georgia;
+  
+  --animate-shine: shine 2s infinite;
+
+  @keyframes shine {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
 }
 
 body {

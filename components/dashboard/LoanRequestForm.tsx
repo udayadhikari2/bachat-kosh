@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { createLoanRequest, getUserLoanProfile } from "@/lib/actions/loan";
 import { toast } from "react-hot-toast";
-import { adToBs, bsToAd, NEPALI_MONTHS, NEPALI_WEEKDAYS, getStartDayOfMonth, getDaysInMonth } from "@/lib/utils/nepali-date";
+import { adToBs, bsToAd, NEPALI_MONTHS, NEPALI_WEEKDAYS, getStartDayOfMonth, getDaysInMonth, getNepaliYearRange } from "@/lib/utils/nepali-date";
+import Image from "next/image";
 
 interface LoanRequestFormProps {
   userId: string;
@@ -35,6 +36,8 @@ export default function LoanRequestForm({
   const [userProfile, setUserProfile] = useState<any>(null);
   const [showUserList, setShowUserList] = useState(false);
   const [isHistorical, setIsHistorical] = useState(false);
+  const [takeServiceCharge, setTakeServiceCharge] = useState(true);
+  const [recordOutflow, setRecordOutflow] = useState(true);
   
   const [bsYear, setBsYear] = useState(() => adToBs(new Date()).year);
   const [bsMonth, setBsMonth] = useState(() => adToBs(new Date()).month);
@@ -80,7 +83,15 @@ export default function LoanRequestForm({
   useEffect(() => {
     if (isHistorical) {
       try {
-        const adDate = bsToAd(bsYear, bsMonth, bsDay);
+        // Cap bsDay if it exceeds the max days in current month
+        const maxDays = getDaysInMonth(bsYear, bsMonth);
+        let actualDay = bsDay;
+        if (bsDay > maxDays) {
+          actualDay = maxDays;
+          setBsDay(maxDays);
+        }
+
+        const adDate = bsToAd(bsYear, bsMonth, actualDay);
         // Correct timezone offset manually before ISO extraction or just use local formatting
         const y = adDate.getFullYear();
         const m = String(adDate.getMonth() + 1).padStart(2, '0');
@@ -103,6 +114,8 @@ export default function LoanRequestForm({
         reason: data.reason,
         adminRequesterId: isAdmin ? currentUserId : undefined,
         activatedAt: isHistorical ? data.activatedAt : undefined,
+        takeServiceCharge: isHistorical ? takeServiceCharge : true,
+        recordOutflow: isHistorical ? recordOutflow : true,
       });
 
       if (res.success) {
@@ -170,8 +183,12 @@ export default function LoanRequestForm({
                         className="w-full flex items-center justify-between p-4 hover:bg-emerald-500/10 transition-colors border-b border-slate-800/50 last:border-0 group/item"
                       >
                         <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-slate-800 rounded-full flex items-center justify-center text-[10px] font-bold text-emerald-400">
-                            {u.name[0]}
+                          <div className="w-9 h-9 bg-slate-800 rounded-xl border border-white/5 flex items-center justify-center overflow-hidden relative shadow-lg">
+                            {u.profileImage ? (
+                              <Image src={u.profileImage} alt={u.name} fill sizes="36px" className="object-cover" />
+                            ) : (
+                              <span className="text-[10px] font-bold text-emerald-400">{u.name[0]}</span>
+                            )}
                           </div>
                           <div className="text-left">
                             <p className="text-sm font-bold text-white group-hover/item:text-emerald-400 transition-colors">{u.name}</p>
@@ -208,6 +225,32 @@ export default function LoanRequestForm({
                 </label>
               </div>
 
+              {isHistorical && (
+                <div className="flex items-center justify-between py-3 border-t border-amber-500/10 mb-2">
+                  <div>
+                    <p className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest">Apply Service Charge</p>
+                    <p className="text-[8px] text-slate-600 font-bold">Standard institutional fee for this loan principal.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={takeServiceCharge} onChange={(e) => setTakeServiceCharge(e.target.checked)} />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+              )}
+
+              {isHistorical && (
+                <div className="flex items-center justify-between py-3 border-t border-amber-500/10 mb-2">
+                  <div>
+                    <p className="text-[10px] font-black text-amber-500/70 uppercase tracking-widest">Record as Bank Outflow</p>
+                    <p className="text-[8px] text-slate-600 font-bold">Record this principal as a new cash disbursement today.</p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input type="checkbox" className="sr-only peer" checked={recordOutflow} onChange={(e) => setRecordOutflow(e.target.checked)} />
+                    <div className="w-9 h-5 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                  </label>
+                </div>
+              )}
+
               {isHistorical && (() => {
                 const startDay = getStartDayOfMonth(bsYear, bsMonth);
                 const daysInMonth = getDaysInMonth(bsYear, bsMonth);
@@ -227,7 +270,7 @@ export default function LoanRequestForm({
                               {NEPALI_MONTHS.map((m, i) => <option key={i+1} value={i+1} className="bg-slate-900 text-amber-500">{m}</option>)}
                             </select>
                             <select value={bsYear} onChange={e => setBsYear(Number(e.target.value))} className="bg-transparent font-black text-amber-500/70 outline-none cursor-pointer text-xs text-left appearance-none focus:text-white transition-colors">
-                              {Array.from({length: 31}, (_, i) => 2060 + i).map(y => <option key={y} value={y} className="bg-slate-900 text-amber-500/70">{y}</option>)}
+                              {getNepaliYearRange(adToBs(new Date()).year - 10).map((y: number) => <option key={y} value={y} className="bg-slate-900 text-amber-500/70">{y}</option>)}
                             </select>
                           </div>
                           <button type="button" onClick={() => { if(bsMonth===12){setBsMonth(1);setBsYear(y=>y+1)}else{setBsMonth(m=>m+1)} }} className="p-1 hover:bg-white/10 rounded-lg transition-colors active:scale-95"><ChevronRight className="w-4 h-4 text-slate-400"/></button>
@@ -294,11 +337,27 @@ export default function LoanRequestForm({
             ) : userProfile && (
               <div className="space-y-4">
                 <div className="flex justify-between items-start">
-                  <div className="flex items-center gap-3">
-                    <UserIcon className="w-4 h-4 text-emerald-400" />
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-slate-900 rounded-2xl border border-emerald-500/20 p-1 relative shadow-2xl">
+                      <div className="w-full h-full rounded-[14px] overflow-hidden relative bg-slate-800">
+                        {userProfile.user.profileImage ? (
+                          <Image 
+                            src={userProfile.user.profileImage} 
+                            alt={userProfile.user.name} 
+                            fill 
+                            sizes="48px"
+                            className="object-cover" 
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center">
+                            <UserIcon className="w-5 h-5 text-emerald-500/50" />
+                          </div>
+                        )}
+                      </div>
+                    </div>
                     <div>
                       <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest">Selected Principal</p>
-                      <p className="text-sm font-bold text-white">{userProfile.user.name}</p>
+                      <p className="text-sm font-bold text-white uppercase tracking-tight">{userProfile.user.name}</p>
                     </div>
                   </div>
                   <div className="px-2 py-1 bg-emerald-500/10 rounded-lg border border-emerald-500/20">

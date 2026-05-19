@@ -1,65 +1,114 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { 
-  Loader2, 
-  X, 
-  PiggyBank, 
-  Camera, 
+import {
+  Loader2,
+  X,
+  PiggyBank,
   AlertCircle,
   CheckCircle2,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  UploadCloud,
+  ArrowRight,
+  TrendingUp,
+  Sparkles
 } from "lucide-react";
-import { adToBs, getCurrentNepaliDate } from "@/lib/utils/nepali-date";
+import { motion, AnimatePresence } from "framer-motion";
+import { adToBs, getCurrentNepaliDate, parseNepaliMonth, getDaysInMonth, bsToAd } from "@/lib/utils/nepali-date";
 import NepaliDatePicker from "./NepaliDatePicker";
 import { createDeposit } from "@/lib/actions/deposit";
 import { getUserBalance } from "@/lib/actions/user";
+import { getOrganization } from "@/lib/actions/organization";
 import { useSession } from "next-auth/react";
+import Image from "next/image";
 
 interface SubmitDepositFormProps {
   onClose: () => void;
-  currentMonth: string;
-  defaultAmount: number;
+  currentMonth?: string;
+  defaultAmount?: number;
 }
 
-export default function SubmitDepositForm({ 
-  onClose, 
-  currentMonth,
-  defaultAmount 
+export default function SubmitDepositForm({
+  onClose,
+  currentMonth = "",
+  defaultAmount = 1000
 }: SubmitDepositFormProps) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
   const [paymentDate, setPaymentDate] = useState(new Date().toISOString());
   const [bsMonth, setBsMonth] = useState("");
+  const [englishMonth, setEnglishMonth] = useState("");
   const [depositType, setDepositType] = useState<"MONTHLY" | "SERVICE_CHARGE" | "LOAN_INTEREST">("MONTHLY");
   const [advancedPayment, setAdvancedPayment] = useState(0);
   const [userBalance, setUserBalance] = useState(0);
   const [creditUsed, setCreditUsed] = useState(0);
   const [useCredit, setUseCredit] = useState(false);
-  
+  const [orgConfig, setOrgConfig] = useState<any>(null);
+  const [inputAmount, setInputAmount] = useState<number>(defaultAmount || 0);
+  const [fineApplied, setFineApplied] = useState(0);
+  const [remarks, setRemarks] = useState("");
+
   const { data: session } = useSession();
 
   useEffect(() => {
     const bs = getCurrentNepaliDate();
     setBsMonth(`${bs.monthName} ${bs.year}`);
-    
-    // Fetch user balance
+
     if (session?.user) {
       const user = session.user as any;
-      getUserBalance(user.id).then(res => {
-        if (res.success) setUserBalance(res.balance || 0);
+      Promise.all([
+        getUserBalance(user.id),
+        getOrganization(user.organizationId)
+      ]).then(([balanceRes, orgRes]) => {
+        if (balanceRes.success) setUserBalance(balanceRes.balance || 0);
+        if (orgRes.success) {
+          setOrgConfig(orgRes.data.config);
+          setInputAmount(orgRes.data.config?.monthlyDepositAmount || defaultAmount || 0);
+        }
       });
     }
-  }, [session]);
+  }, [session, defaultAmount]);
+
+  const requiredBase = depositType === "MONTHLY" ? (orgConfig?.monthlyDepositAmount || defaultAmount || 0) : 0;
+
+  useEffect(() => {
+    if (depositType !== "MONTHLY" || !orgConfig) {
+      setFineApplied(0);
+      setAdvancedPayment(0);
+      return;
+    }
+
+    try {
+      const target = parseNepaliMonth(bsMonth);
+      const daysInMonth = getDaysInMonth(target.year, target.month);
+      const lastDayAd = bsToAd(target.year, target.month, daysInMonth);
+      lastDayAd.setHours(23, 59, 59, 999);
+
+      const isLate = new Date(paymentDate) > lastDayAd;
+      const fine = isLate ? orgConfig.lateFee : 0;
+      setFineApplied(fine);
+
+      const totalRequired = requiredBase + fine;
+      const totalProvided = (inputAmount || 0) + (useCredit ? creditUsed : 0);
+      
+      if (totalProvided < totalRequired) {
+        setAdvancedPayment(inputAmount || 0); // Only new cash is added to pool if insufficient
+      } else {
+        setAdvancedPayment(totalProvided - totalRequired);
+      }
+    } catch (e) {
+      console.error("Calculation error:", e);
+    }
+  }, [paymentDate, bsMonth, inputAmount, creditUsed, useCredit, depositType, orgConfig, requiredBase]);
+
+  const totalRequired = requiredBase + fineApplied;
+  const isInsufficient = depositType === "MONTHLY" && ((inputAmount || 0) + (useCredit ? creditUsed : 0)) < totalRequired;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError("");
-
-    const formData = new FormData(e.currentTarget as HTMLFormElement);
-    const amount = Number(formData.get("amount"));
 
     const user = session?.user as any;
     if (!user) {
@@ -68,7 +117,6 @@ export default function SubmitDepositForm({
       return;
     }
 
-    // Validation for credit
     if (useCredit && creditUsed > userBalance) {
       setError("Not enough advance balance");
       setLoading(false);
@@ -78,14 +126,15 @@ export default function SubmitDepositForm({
     const result = await createDeposit({
       userId: user.id,
       organizationId: user.organizationId,
-      amount,
+      amount: inputAmount || 0,
       advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
       creditUsed: useCredit ? creditUsed : 0,
       month: bsMonth,
       depositType,
       depositDate: paymentDate,
-      proof: (useCredit && creditUsed >= amount) 
-        ? "CREDIT_PAYMENT" 
+      remarks,
+      proof: (useCredit && creditUsed >= totalRequired)
+        ? "CREDIT_PAYMENT"
         : "https://placehold.co/600x400/000000/FFFFFF/png?text=Transaction+Proof"
     });
 
@@ -100,178 +149,235 @@ export default function SubmitDepositForm({
 
   if (success) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
-        <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-8 text-center animate-in zoom-in duration-300">
-          <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl">
+        <motion.div
+          initial={{ scale: 0.9, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          className="w-full max-w-md bg-slate-900 border border-white/10 rounded-[32px] p-10 text-center shadow-[0_0_100px_rgba(16,185,129,0.1)] relative overflow-hidden"
+        >
+          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500 to-transparent" />
+          <motion.div
+            initial={{ y: 20, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            transition={{ delay: 0.2 }}
+            className="w-20 h-20 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center mx-auto mb-6 relative"
+          >
             <CheckCircle2 className="w-10 h-10 text-emerald-500" />
-          </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Submission Received!</h2>
-          <p className="text-slate-400">Your deposit record has been submitted for verification.</p>
-        </div>
+            <motion.div
+              animate={{ scale: [1, 1.5, 1], opacity: [0.3, 0, 0.3] }}
+              transition={{ repeat: Infinity, duration: 2 }}
+              className="absolute inset-0 bg-emerald-500/20 rounded-2xl -z-10"
+            />
+          </motion.div>
+          <h2 className="text-2xl font-black text-white mb-2 tracking-tight">Success!</h2>
+          <p className="text-slate-400 text-sm font-medium leading-relaxed">Your deposit has been queued for verification.</p>
+        </motion.div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-300">
-      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl animate-in zoom-in duration-300">
-        <div className="flex justify-between items-center p-6 border-b border-slate-800 bg-slate-900/50">
-          <h2 className="text-xl font-bold text-white flex items-center">
-            <PiggyBank className="w-5 h-5 mr-2 text-emerald-400" />
-            Monthly Savings Entry
-          </h2>
-          <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
-            <X className="w-6 h-6" />
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-md overflow-y-auto">
+      <motion.div
+        initial={{ y: 40, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        exit={{ y: 40, opacity: 0 }}
+        className="w-full max-w-xl bg-slate-950 border border-white/10 rounded-[48px] shadow-[0_0_150px_rgba(0,0,0,0.8)] relative overflow-hidden my-auto"
+      >
+        <div className="absolute -top-24 -right-24 w-64 h-64 bg-emerald-500/10 blur-[100px] rounded-full pointer-events-none" />
+        <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-blue-500/10 blur-[100px] rounded-full pointer-events-none" />
+        <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/30 to-transparent" />
+
+        <div className="flex justify-between items-center px-8 py-5 border-b border-white/5 bg-white/[0.02]">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-slate-900 rounded-2xl flex items-center justify-center border border-emerald-500/20 shadow-2xl overflow-hidden relative p-1">
+              <div className="w-full h-full rounded-xl overflow-hidden relative bg-slate-800">
+                {(session?.user as any)?.profileImage || session?.user?.image ? (
+                  <Image
+                    src={(session?.user as any)?.profileImage || session?.user?.image}
+                    alt={session?.user?.name || "User"}
+                    fill
+                    sizes="48px"
+                    className="object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <PiggyBank className="w-5 h-5 text-emerald-500/50" />
+                  </div>
+                )}
+              </div>
+            </div>
+            <div>
+              <h2 className="text-lg font-black text-white tracking-tight uppercase">New Submission</h2>
+              <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.2em] mt-0.5">Registry Ledger</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl transition-all group active:scale-90">
+            <X className="w-4 h-4 text-slate-400 group-hover:text-white" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
-          <div className="bg-slate-950 border border-slate-800 p-4 rounded-2xl flex items-center justify-between shadow-inner">
-            <div>
-              <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1">Target Month (BS)</p>
-              <p className="text-white font-black text-sm uppercase tracking-tight">{bsMonth}</p>
+          {error && (
+            <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-500 text-xs font-bold uppercase tracking-tight">
+              <AlertCircle className="w-4 h-4" /> {error}
             </div>
-            <div className="text-right">
-              <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1">Savings Goal</p>
-              <p className="text-emerald-400 font-black text-sm">Rs. {defaultAmount}</p>
+          )}
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-white/[0.03] border border-white/5 p-4 rounded-2xl flex flex-col justify-center relative overflow-hidden group">
+              <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1.5">Target Month</p>
+              <p className="text-white font-black text-base uppercase tracking-tight">{englishMonth}</p>
+              <p className="text-[8px] text-emerald-500/50 font-black uppercase mt-1 tracking-tighter">{bsMonth}</p>
+            </div>
+            <div className="bg-white/[0.03] border border-white/5 p-4 rounded-2xl flex flex-col justify-center relative overflow-hidden group">
+              <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1.5">Monthly Goal</p>
+              <p className="text-emerald-400 font-black text-base">Rs. {orgConfig?.monthlyDepositAmount || defaultAmount}</p>
             </div>
           </div>
 
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Transaction Category</label>
-              <select 
-                value={depositType}
-                onChange={(e) => setDepositType(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-emerald-400 focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all font-black tracking-widest uppercase text-xs cursor-pointer shadow-inner"
-              >
-                <option value="MONTHLY">Monthly Savings</option>
-                <option value="SERVICE_CHARGE">Service Charge</option>
-                <option value="LOAN_INTEREST">Loan Interest</option>
-              </select>
+          <AnimatePresence mode="wait">
+            {fineApplied > 0 && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                <div className="p-5 bg-rose-500/10 border border-rose-500/20 rounded-[32px] flex items-center gap-5">
+                  <div className="w-12 h-12 bg-rose-500/20 rounded-2xl flex items-center justify-center text-rose-500 shrink-0 border border-rose-500/20">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className="text-[11px] font-black text-rose-500 uppercase tracking-widest">Late Fine Active</p>
+                    <p className="text-xs text-rose-400/70 font-bold mt-0.5">Rs. {fineApplied} added to required total for overdue submission.</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Type</label>
+                <select
+                  value={depositType}
+                  onChange={(e) => setDepositType(e.target.value as any)}
+                  className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-5 py-3 text-emerald-400 font-black tracking-widest uppercase text-[11px] outline-none"
+                >
+                  <option value="MONTHLY">Monthly Savings</option>
+                  <option value="SERVICE_CHARGE">Service Charge</option>
+                  <option value="LOAN_INTEREST">Loan Interest</option>
+                </select>
+              </div>
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Payment Date</label>
+                <NepaliDatePicker value={paymentDate} onChange={setPaymentDate} />
+              </div>
             </div>
 
-            <NepaliDatePicker 
-
-              label="Transaction Date (Nepali)"
-              value={paymentDate}
-              onChange={setPaymentDate}
-            />
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">Paid Amount (NPR)</label>
-              <input
-                type="number"
-                name="amount"
-                defaultValue={defaultAmount}
-                required
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all font-bold"
-              />
-            </div>
-
-            {/* Advanced Payment — shown when deposit type is MONTHLY */}
-            {depositType === "MONTHLY" && (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label className="text-[10px] font-black text-blue-500/70 uppercase tracking-widest ml-1">
-                    Advanced Payment (NPR) <span className="text-slate-600 normal-case font-bold">— if paid above monthly goal</span>
-                  </label>
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex justify-between items-center px-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Transaction Amount (NPR)</label>
+                  {totalRequired > 0 && (
+                    <span className="text-[9px] font-black text-emerald-500/50 uppercase tracking-tighter">Min: Rs. {totalRequired}</span>
+                  )}
+                </div>
+                <div className="relative group/input">
+                  <span className="absolute left-5 top-1/2 -translate-y-1/2 text-slate-500 font-black text-base">Rs.</span>
                   <input
                     type="number"
-                    min="0"
-                    value={advancedPayment === 0 ? "" : advancedPayment}
+                    value={inputAmount || ""}
+                    onChange={(e) => setInputAmount(Number(e.target.value) || 0)}
+                    required
+                    className={`w-full bg-white/[0.03] border rounded-2xl pl-12 pr-6 py-3.5 text-lg font-black text-white focus:ring-4 focus:ring-emerald-500/10 outline-none transition-all shadow-inner tracking-tight ${isInsufficient ? "border-rose-500/50 ring-4 ring-rose-500/5" : "border-white/5 focus:border-emerald-500/40"}`}
                     placeholder="0"
-                    onChange={(e) => setAdvancedPayment(Number(e.target.value) || 0)}
-                    className="w-full bg-slate-950 border border-blue-900/60 rounded-xl px-4 py-3 text-blue-400 focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 outline-none transition-all font-bold placeholder-slate-800 shadow-inner"
                   />
                 </div>
+                {isInsufficient && (
+                  <p className="text-[10px] text-rose-500 font-black uppercase tracking-widest mt-2 ml-4 flex items-center gap-2">
+                    <AlertCircle className="w-3.5 h-3.5" /> Amount less than Rs. {totalRequired} is rejected.
+                  </p>
+                )}
+              </div>
 
-                {/* Credit Consumption Section */}
-                {userBalance > 0 && (
-                  <div className={`p-5 rounded-2xl border transition-all duration-300 ${useCredit ? "bg-emerald-500/5 border-emerald-500/20 shadow-lg shadow-emerald-500/5" : "bg-slate-950/50 border-slate-800"}`}>
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                         <div className={`p-2 rounded-xl border transition-all ${useCredit ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400 scale-110" : "bg-slate-900 border-slate-800 text-slate-500"}`}>
-                           <CheckCircle2 className="w-4 h-4" />
-                         </div>
-                         <div>
-                            <p className="text-[10px] font-black uppercase text-slate-500 tracking-widest leading-none mb-1">Use Global Credit</p>
-                            <p className="text-[9px] font-bold text-emerald-500/70 uppercase tracking-tight">Available: Rs. {userBalance.toLocaleString()}</p>
-                         </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUseCredit(!useCredit);
-                          if (!useCredit) setCreditUsed(defaultAmount);
-                        }}
-                        className={`w-12 h-6 rounded-full relative transition-all duration-300 ${useCredit ? "bg-emerald-600" : "bg-slate-800"}`}
-                      >
-                         <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all duration-300 ${useCredit ? "left-7" : "left-1"}`} />
-                      </button>
+              <AnimatePresence>
+                {depositType === "MONTHLY" && advancedPayment > 0 && (
+                  <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="p-5 bg-blue-500/10 border border-blue-500/20 rounded-[32px] flex items-center gap-5 relative overflow-hidden group">
+                    <div className="w-12 h-12 bg-blue-500/20 rounded-2xl flex items-center justify-center text-blue-400 shrink-0 border border-blue-500/20">
+                      <Sparkles className="w-6 h-6" />
                     </div>
+                    <div>
+                      <p className="text-[11px] font-black text-blue-400 uppercase tracking-widest">{isInsufficient ? "Advance Funding" : "Surplus Detected"}</p>
+                      <p className="text-xs text-blue-400/60 font-bold mt-0.5">Rs. {advancedPayment.toLocaleString()} {isInsufficient ? "will be added to your credit pool." : "added to global credit pool."}</p>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
 
-                    {useCredit && (
-                      <div className="mt-4 pt-4 border-t border-emerald-500/10 animate-in fade-in slide-in-from-top-2">
-                        <label className="text-[9px] font-black text-emerald-500/70 uppercase tracking-widest mb-1.5 block">Credit Amount to Apply</label>
-                        <input
-                          type="number"
-                          max={userBalance}
-                          value={creditUsed}
-                          onChange={(e) => setCreditUsed(Math.min(userBalance, Number(e.target.value) || 0))}
-                          className="w-full bg-slate-950 border border-emerald-500/20 rounded-xl px-4 py-2.5 text-xs font-black text-emerald-400 focus:border-emerald-500/50 outline-none transition-all shadow-inner"
-                        />
-                      </div>
-                    )}
+            {userBalance > 0 && depositType === "MONTHLY" && (
+              <div className={`p-6 rounded-[36px] border transition-all duration-500 shadow-2xl ${useCredit ? "bg-emerald-500/5 border-emerald-500/20 shadow-emerald-500/5" : "bg-white/[0.02] border-white/5 opacity-80"}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-4">
+                    <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border transition-all duration-500 ${useCredit ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-400 rotate-12 scale-110" : "bg-white/5 border-white/10 text-slate-600"}`}>
+                      <PiggyBank className="w-6 h-6" />
+                    </div>
+                    <div>
+                      <p className={`text-[11px] font-black uppercase tracking-tight ${useCredit ? "text-emerald-400" : "text-slate-400"}`}>Consume Global Credit</p>
+                      <p className="text-[9px] text-slate-600 font-bold uppercase tracking-widest mt-1">Available Balance: Rs. {userBalance.toLocaleString()}</p>
+                    </div>
                   </div>
+                  <button type="button" onClick={() => { const newState = !useCredit; setUseCredit(newState); if (newState) setCreditUsed(Math.min(userBalance, totalRequired)); }} className={`w-14 h-7 rounded-full relative transition-all duration-500 ring-4 ring-offset-4 ring-offset-slate-950 ${useCredit ? "bg-emerald-500 ring-emerald-500/10" : "bg-slate-800 ring-transparent"}`}>
+                    <motion.div animate={{ x: useCredit ? 28 : 4 }} className="absolute top-1 w-5 h-5 rounded-full bg-white shadow-xl" />
+                  </button>
+                </div>
+                {useCredit && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} className="mt-6 pt-6 border-t border-emerald-500/10 overflow-hidden">
+                    <div className="space-y-3">
+                      <label className="text-[9px] font-black text-emerald-500/70 uppercase tracking-widest ml-2">Credit Amount to Apply</label>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-500/30 font-black text-sm">Rs.</span>
+                        <input type="number" max={userBalance} value={creditUsed} onChange={(e) => setCreditUsed(Math.min(userBalance, Number(e.target.value) || 0))} className="w-full bg-slate-950 border border-emerald-500/20 rounded-2xl pl-12 pr-6 py-3.5 text-sm font-black text-emerald-400 outline-none" />
+                      </div>
+                    </div>
+                  </motion.div>
                 )}
               </div>
             )}
 
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-widest ml-1">
-                Verification Evidence 
-                {useCredit && creditUsed >= (Number(new FormData().get("amount")) || defaultAmount) && (
-                  <span className="text-emerald-500/70 ml-2">(Optional - Paid via Credit)</span>
-                )}
-              </label>
-              {(useCredit && creditUsed >= (defaultAmount)) ? (
-                <div className="w-full p-6 bg-slate-950 border-2 border-emerald-500/10 border-dashed rounded-2xl flex flex-col items-center justify-center text-center">
-                  <div className="w-10 h-10 bg-emerald-500/10 rounded-full flex items-center justify-center mb-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                  </div>
-                  <p className="text-[9px] text-emerald-500/70 font-black uppercase tracking-widest">Full Credit Adjustment</p>
-                  <p className="text-[10px] text-slate-600 font-bold mt-1 max-w-[200px]">This deposit will be paid entirely from your advance balance. No proof needed.</p>
+            <div className="space-y-4">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Verification Evidence</label>
+              {(useCredit && creditUsed >= totalRequired) ? (
+                <div className="w-full p-12 bg-emerald-500/5 border-2 border-dashed border-emerald-500/20 rounded-[40px] flex flex-col items-center justify-center text-center">
+                  <CheckCircle2 className="w-12 h-12 text-emerald-500 mb-4" />
+                  <p className="text-sm font-black text-emerald-400 uppercase tracking-widest">Paid via Credit</p>
                 </div>
               ) : (
-                <div className="relative group">
-                  <div className="w-full aspect-video bg-slate-950 border-2 border-dashed border-slate-800 rounded-2xl flex flex-col items-center justify-center group-hover:border-emerald-500/50 transition-colors cursor-pointer">
-                    <Camera className="w-8 h-8 text-slate-800 mb-2 group-hover:text-emerald-500 transition-colors" />
-                    <p className="text-[10px] text-slate-600 font-bold uppercase tracking-widest group-hover:text-slate-400">Capture Proof</p>
-                    <p className="text-xs text-slate-600 mt-1">PNG, JPG up to 5MB</p>
-                  </div>
-                  <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" accept="image/*" required={!useCredit} />
+                <div className="w-full py-16 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[40px] flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-500/5 transition-all">
+                  <UploadCloud className="w-8 h-8 text-slate-600 mb-4" />
+                  <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">Drop or Capture Proof</p>
                 </div>
               )}
             </div>
+
+            <div className="space-y-3">
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Transaction Notes (Optional)</label>
+              <textarea
+                value={remarks}
+                onChange={(e) => setRemarks(e.target.value)}
+                placeholder="Brief description or purpose of this transaction..."
+                className="w-full bg-white/[0.02] border border-white/5 rounded-2xl px-6 py-4 text-sm text-white focus:ring-4 focus:ring-emerald-500/10 focus:border-emerald-500/40 outline-none transition-all shadow-inner min-h-[100px] resize-none"
+              />
+            </div>
           </div>
 
-          <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-start">
-            <AlertCircle className="w-5 h-5 text-emerald-500 mr-3 mt-0.5" />
-            <p className="text-xs text-emerald-400 leading-relaxed">
-              Ensure the screenshot clearly shows the transaction ID and amount sent to the Laxmi Bank account.
-            </p>
+          <div className="pt-6">
+            <button type="submit" disabled={loading || isInsufficient} className="w-full group relative py-6 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-black uppercase tracking-[0.3em] rounded-[32px] shadow-[0_20px_50px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-4 active:scale-95 disabled:opacity-30">
+              <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shine pointer-events-none" />
+              {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <span>{isInsufficient ? "Insufficient Assets" : "Submit Transaction"}</span>}
+              {!isInsufficient && !loading && <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />}
+            </button>
           </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-4 rounded-xl shadow-lg shadow-emerald-600/20 transition-all flex items-center justify-center disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "Submit record"}
-          </button>
         </form>
-      </div>
+      </motion.div>
     </div>
   );
 }

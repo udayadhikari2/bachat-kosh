@@ -4,6 +4,7 @@ export interface INotification extends Document {
   senderId: mongoose.Types.ObjectId;
   recipientId?: mongoose.Types.ObjectId; // Optional for directed notification
   targetRole?: "ADMIN" | "USER" | "ALL"; // Role-based broadcasting
+  relatedId?: mongoose.Types.ObjectId; // Linked entity ID (e.g. Deposit ID)
   title: string;
   message: string;
   isRead: boolean;
@@ -21,6 +22,7 @@ const NotificationSchema: Schema = new Schema(
       enum: ["ADMIN", "USER", "ALL"],
       default: "ALL"
     },
+    relatedId: { type: Schema.Types.ObjectId },
     title: { type: String, required: true },
     message: { type: String, required: true },
     isRead: { type: Boolean, default: false },

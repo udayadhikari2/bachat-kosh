@@ -28,6 +28,10 @@ export interface IOrganization extends Document {
     initialLoanInterest: number;
     initialNav: number;
     initialMiscellaneous: number;
+    initialOpeningBalance?: number;
+    initialOpeningMonth?: string;
+    initialOpeningYear?: number;
+    isFrameworkLocked?: boolean;
   };
   isActive: boolean;
   createdAt: Date;
@@ -63,6 +67,10 @@ const OrganizationSchema: Schema = new Schema(
       initialLoanInterest: { type: Number, default: 0 },
       initialNav: { type: Number, default: 0 },
       initialMiscellaneous: { type: Number, default: 0 },
+      initialOpeningBalance: { type: Number, default: 0 },
+      initialOpeningMonth: { type: String, default: "" },
+      initialOpeningYear: { type: Number, default: 0 },
+      isFrameworkLocked: { type: Boolean, default: false },
     },
     isActive: { type: Boolean, default: true },
   },

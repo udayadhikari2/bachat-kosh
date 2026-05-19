@@ -63,3 +63,50 @@ export function getDaysInMonth(year: number, month: number) {
   const bs = adbs.ad2bs(`${ad.year}/${ad.month}/${ad.day}`);
   return bs.en.totalDaysInMonth;
 }
+
+export function parseNepaliMonth(monthStr: string) {
+  const [name, yearStr] = monthStr.split(" ");
+  const monthIndex = NEPALI_MONTHS.findIndex(m => m.toLowerCase() === name.toLowerCase());
+  return {
+    month: monthIndex + 1,
+    year: parseInt(yearStr)
+  };
+}
+
+export function getPreviousNepaliMonth(monthStr: string) {
+  const { month, year } = parseNepaliMonth(monthStr);
+  let prevMonth = month - 1;
+  let prevYear = year;
+  if (prevMonth === 0) {
+    prevMonth = 12;
+    prevYear = year - 1;
+  }
+  return `${NEPALI_MONTHS[prevMonth - 1]} ${prevYear}`;
+}
+
+export function getNextNepaliMonth(monthStr: string) {
+  const { month, year } = parseNepaliMonth(monthStr);
+  let nextMonth = month + 1;
+  let nextYear = year;
+  if (nextMonth > 12) {
+    nextMonth = 1;
+    nextYear = year + 1;
+  }
+  return `${NEPALI_MONTHS[nextMonth - 1]} ${nextYear}`;
+}
+
+/**
+ * Generates a range of Nepali years in descending order.
+ * @param startYear The earliest year to include
+ * @param endOffset Years to add beyond the current year (default: 3)
+ */
+export function getNepaliYearRange(startYear: number, endOffset: number = 3) {
+  const current = getCurrentNepaliDate();
+  const endYear = current.year + endOffset;
+  
+  const years = [];
+  for (let y = startYear; y <= endYear; y++) {
+    years.push(y);
+  }
+  return years;
+}

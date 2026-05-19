@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { AnimatePresence } from "framer-motion";
 import { 
   Users, 
   Plus, 
@@ -26,10 +27,33 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import PageHeader from "@/components/dashboard/PageHeader";
-import { getUsersByOrg, getAllUsers, toggleUserStatus, deleteUser } from "@/lib/actions/user";
+import { getUsersByOrg, getAllUsers, toggleUserStatus, deleteUser, updateUserAdvanceBalance } from "@/lib/actions/user";
 import { getOrganizations } from "@/lib/actions/organization";
+import { getMemberActivity, deleteTimelineEvents } from "@/lib/actions/member";
 import AddUserForm from "@/components/dashboard/AddUserForm";
+import MemberProfileView from "@/components/dashboard/MemberProfileView";
+import MemberHistoryModal from "@/components/dashboard/MemberHistoryModal";
+import Image from "next/image";
+import ImportUserModal from "@/components/dashboard/ImportUserModal";
 import { exportToCSV, exportToXLSX, formatUserDataForExport } from "@/lib/utils/export-utils";
+import { adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
+import { toast } from "react-hot-toast";
+import { 
+  PiggyBank, 
+  HandCoins, 
+  CheckCircle2, 
+  Wallet, 
+  Clock, 
+  FileClock, 
+  CreditCard, 
+  RotateCcw, 
+  Bell as BellIcon, 
+  X as CloseIcon,
+  Eye,
+  Edit3,
+  Lock,
+  AlertCircle
+} from "lucide-react";
 
 export default function UsersPage() {
   const { data: session } = useSession();
@@ -38,12 +62,19 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<any>(null);
+  const [viewingUser, setViewingUser] = useState<any>(null);
+  const [showViewModal, setShowViewModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   
   // Selection-First Filters
-  const [roleFilter, setRoleFilter] = useState("");
+  const [roleFilter, setRoleFilter] = useState("USER");
   const [statusFilter, setStatusFilter] = useState("");
   const [orgFilter, setOrgFilter] = useState("");
+  // Timeline & Report state
+  const [reportLoading, setReportLoading] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [reportUserId, setReportUserId] = useState<string | null>(null);
 
   // Pagination State
   const [currentPage, setCurrentPage] = useState(1);
@@ -120,16 +151,33 @@ export default function UsersPage() {
   }, [searchQuery, roleFilter, statusFilter, orgFilter, rowsPerPage]);
 
   const handleToggleStatus = async (targetUser: any) => {
-    if (!confirm(`Are you sure you want to ${targetUser.isActive ? "disable" : "enable"} this user?`)) return;
+    // No confirmation needed for a toggle if the UI is clear
     const result = await toggleUserStatus(targetUser._id, targetUser.isActive);
-    if (result.success) fetchUsers();
+    if (result.success) {
+      toast.success(`Member ${targetUser.isActive ? "deactivated" : "activated"} successfully`);
+      fetchUsers();
+    } else {
+      toast.error(result.error || "Failed to update status");
+    }
+  };
+
+  const handleOpenMemberReport = async (userId: string) => {
+    setReportUserId(userId);
+    setShowReport(true);
   };
 
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this user? This action cannot be undone.")) return;
     const result = await deleteUser(id);
-    if (result.success) fetchUsers();
+    if (result.success) {
+      toast.success("User deleted successfully");
+      fetchUsers();
+    } else {
+      toast.error(result.error || "Failed to delete user");
+    }
   };
+
+  // handleUpdateAdvancePool and handleDeleteTimelineEvents removed (moved to MemberHistoryModal)
 
   const handleExport = (type: 'csv' | 'xlsx') => {
     const dataToExport = formatUserDataForExport(filteredUsers);
@@ -145,15 +193,38 @@ export default function UsersPage() {
         description="Manage system administrators and organization members. Control access and roles."
         icon={Users}
         actions={
-          <button 
-            onClick={() => setShowModal(true)}
-            className="flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all font-semibold shadow-lg shadow-emerald-500/20 active:scale-95"
-          >
-            <Plus className="w-5 h-5 mr-2" />
-            Add New User
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            <button 
+              onClick={() => {
+                console.log("Import button clicked");
+                setShowImportModal(true);
+              }}
+              className="flex items-center px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl transition-all font-semibold border border-slate-700 active:scale-95 text-xs uppercase tracking-widest"
+            >
+              <FileSpreadsheet className="w-4 h-4 mr-2 text-emerald-500" />
+              Import Members
+            </button>
+            <button 
+              onClick={() => {
+                setEditingUser(null);
+                setShowModal(true);
+              }}
+              className="flex items-center px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all font-semibold shadow-lg shadow-emerald-500/20 active:scale-95 text-xs uppercase tracking-widest"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Add New User
+            </button>
+          </div>
         }
       />
+
+      {showImportModal && (
+        <ImportUserModal 
+          organizationId={orgId || ""}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => fetchUsers()}
+        />
+      )}
 
       <div className="flex flex-col space-y-4">
         {/* Search and Export Bar */}
@@ -281,7 +352,8 @@ export default function UsersPage() {
                     <th className="px-8 py-5">Profile Entity</th>
                     <th className="px-8 py-5">Accounting Ref</th>
                     <th className="px-8 py-5">Access Rank</th>
-                    <th className="px-8 py-5 text-right">Actions</th>
+                    <th className="px-8 py-5 text-center">Status</th>
+                    <th className="px-8 py-5 text-right">Operations</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-800/50">
@@ -289,18 +361,22 @@ export default function UsersPage() {
                     <tr key={item._id} className="group hover:bg-slate-800/20 transition-all duration-300">
                       <td className="px-8 py-6">
                         <div className="flex items-center gap-5">
-                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 flex items-center justify-center text-emerald-400 font-black shadow-xl group-hover:scale-105 transition-transform">
-                            {item.name.charAt(0)}
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-slate-800 to-slate-900 border border-slate-700 flex items-center justify-center text-emerald-400 font-black shadow-xl group-hover:scale-105 transition-transform overflow-hidden relative">
+                            {item.profileImage ? (
+                              <Image 
+                                src={item.profileImage} 
+                                alt={item.name} 
+                                fill 
+                                sizes="48px"
+                                className="object-cover" 
+                              />
+                            ) : (
+                              item.name.charAt(0)
+                            )}
                           </div>
                           <div>
                             <div className="font-bold text-white leading-none flex items-center gap-2 text-base">
                               {item.name}
-                              {item.isActive ? (
-                                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] animate-pulse"></span>
-                              ) : (
-                                <span className="w-2 h-2 rounded-full bg-red-500"></span>
-                              )}
-                              {!item.isActive && <span className="text-[8px] bg-red-500/10 text-red-500 px-2 py-0.5 rounded uppercase font-black tracking-tighter ring-1 ring-red-500/20">Disabled</span>}
                             </div>
                             <div className="flex items-center text-xs text-slate-500 mt-2 font-bold tracking-tight">
                               <Mail className="w-3.5 h-3.5 mr-2 opacity-50" />
@@ -343,51 +419,64 @@ export default function UsersPage() {
                           )}
                         </div>
                       </td>
-                      <td className="px-8 py-6 text-right">
-                        <div className="flex items-center justify-end gap-3">
-                          <Link
-                            href={`/dashboard/notifications?recipient=${item._id}`}
-                            className="p-2.5 text-slate-500 hover:text-blue-400 hover:bg-blue-500/10 rounded-xl transition-all border border-transparent hover:border-blue-500/20"
-                            title="Send Broadcast"
-                          >
-                            <Send className="w-4 h-4" />
-                          </Link>
-                          <button
-                            onClick={() => {
-                              setEditingUser(item);
-                              setShowModal(true);
-                            }}
-                            className="p-2.5 text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 rounded-xl transition-all active:scale-95 border border-transparent hover:border-emerald-500/20"
-                            title="Edit Record"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
+                      <td className="px-8 py-6">
+                        <div className="flex justify-center">
                           <button
                             onClick={() => item.role !== "DEVELOPER" && handleToggleStatus(item)}
                             disabled={item.role === "DEVELOPER"}
-                            className={`p-2.5 rounded-xl transition-all active:scale-95 border border-transparent ${
-                              item.role === "DEVELOPER" 
-                                ? "opacity-10 cursor-not-allowed" 
-                                : item.isActive 
-                                ? "text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20" 
-                                : "text-slate-500 hover:text-emerald-400 hover:bg-emerald-500/10 hover:border-emerald-500/20"
-                            }`}
-                            title={item.role === "DEVELOPER" ? "Protected Node" : item.isActive ? "Deactivate" : "Activate"}
+                            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                              item.isActive ? 'bg-emerald-600' : 'bg-slate-700'
+                            } ${item.role === "DEVELOPER" ? "opacity-20 cursor-not-allowed" : "cursor-pointer"}`}
                           >
-                            <Power className="w-4 h-4" />
+                            <span
+                              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                                item.isActive ? 'translate-x-6' : 'translate-x-1'
+                              }`}
+                            />
                           </button>
+                        </div>
+                      </td>
+                      <td className="px-8 py-6 text-right">
+                        <div className="flex items-center justify-end gap-2">
                           <button
-                            onClick={() => item.role !== "DEVELOPER" && handleDelete(item._id)}
-                            disabled={item.role === "DEVELOPER"}
-                            className={`p-2.5 rounded-xl transition-all active:scale-95 border border-transparent ${
-                              item.role === "DEVELOPER" 
-                                ? "opacity-10 cursor-not-allowed" 
-                                : "text-slate-500 hover:text-red-400 hover:bg-red-500/10 hover:border-red-500/20"
-                            }`}
-                            title={item.role === "DEVELOPER" ? "Protected Node" : "Erase Record"}
+                            onClick={() => {
+                              setViewingUser(item);
+                              setShowViewModal(true);
+                            }}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-lg border border-slate-700 transition-all active:scale-95 text-[10px] font-black uppercase tracking-widest"
+                            title="View Full Profile"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
+                            View
                           </button>
+                          
+                          <button
+                            onClick={() => handleOpenMemberReport(item._id)}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 hover:text-blue-300 rounded-lg border border-blue-500/20 transition-all active:scale-95 text-[10px] font-black uppercase tracking-widest"
+                            title="Transaction History"
+                          >
+                            <FileClock className="w-3.5 h-3.5" />
+                            History
+                          </button>
+
+                          <Link
+                            href={`/dashboard/notifications?recipient=${item._id}`}
+                            className="flex items-center gap-2 px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 hover:text-emerald-300 rounded-lg border border-emerald-500/20 transition-all active:scale-95 text-[10px] font-black uppercase tracking-widest"
+                            title="Send Notification"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            Notify
+                          </Link>
+
+                          {user?.role === "DEVELOPER" && item.role !== "DEVELOPER" && (
+                            <button
+                              onClick={() => handleDelete(item._id)}
+                              className="p-1.5 text-slate-600 hover:text-red-500 transition-colors"
+                              title="Delete (Dev Only)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -458,10 +547,43 @@ export default function UsersPage() {
           }} 
           fixedOrgId={orgId}
           organizations={organizations}
+          users={users}
           isDeveloperMode={user?.role === "DEVELOPER"}
           initialData={editingUser}
         />
       )}
+
+      {showViewModal && viewingUser && (
+        <MemberProfileView
+          member={viewingUser}
+          onClose={() => {
+            setShowViewModal(false);
+            setViewingUser(null);
+          }}
+          onEdit={() => {
+            setEditingUser(viewingUser);
+            setShowViewModal(false);
+            setViewingUser(null);
+            setShowModal(true);
+          }}
+        />
+      )}
+
+
+
+      {/* Member History Modal */}
+      <AnimatePresence>
+        {showReport && reportUserId && (
+          <MemberHistoryModal
+            userId={reportUserId}
+            onClose={() => {
+              setShowReport(false);
+              setReportUserId(null);
+            }}
+            isAdmin={user?.role === "ADMIN" || user?.role === "DEVELOPER"}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

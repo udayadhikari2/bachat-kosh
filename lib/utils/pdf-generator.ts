@@ -13,6 +13,9 @@ interface PDFData {
   renewalFeeAmount: number;
   advanceAmountUsed?: number;
   availableAdvanceBalance?: number;
+  baseDays: number;
+  exceedDays: number;
+  stats: any;
 }
 
 export const generateLoanStatementPDF = (data: PDFData) => {
@@ -20,7 +23,10 @@ export const generateLoanStatementPDF = (data: PDFData) => {
     loan, organization, user, activationDate, evaluationDate, 
     daysElapsed, includeRenewalFee, renewalFeeAmount, 
     advanceAmountUsed = 0,
-    availableAdvanceBalance = 0
+    availableAdvanceBalance = 0,
+    baseDays,
+    exceedDays,
+    stats
   } = data;
   const doc = new jsPDF();
   const now = new Date();
@@ -63,7 +69,7 @@ export const generateLoanStatementPDF = (data: PDFData) => {
 
   // --- Member & Timeline Details ---
   doc.setFillColor(245, 247, 250);
-  doc.rect(20, 70, 170, 40, "F");
+  doc.rect(20, 70, 170, 50, "F");
   
   doc.setFontSize(11);
   doc.setTextColor(0);
@@ -74,19 +80,22 @@ export const generateLoanStatementPDF = (data: PDFData) => {
   doc.text(`Name: ${user.name}`, 25, 87);
   doc.text(`Account / Email: ${user.email}`, 25, 92);
   doc.text(`Initial Activation Date: ${activationDate.toLocaleDateString()} (${nepaliActivation} BS)`, 25, 97);
-  doc.text(`Days of Interest (Duration): ${daysElapsed} Days`, 25, 102);
+  doc.text(`Standard Period (Base): ${baseDays} Days (Rate: ${loan.interestRate}% P.A.)`, 25, 102);
+  doc.text(`Exceeded Period (Penalty): ${exceedDays} Days (Rate: ${loan.penaltyRate || 20}% P.A.)`, 25, 107);
+  doc.text(`Total Interest Duration: ${daysElapsed} Days`, 25, 112);
   
   doc.text(`Loan Reference: ${loan._id?.toString().slice(-8).toUpperCase()}`, 115, 87);
-  doc.text(`Base Interest Rate: ${loan.interestRate}% P.A.`, 115, 92);
-  doc.text(`Penalty Rate: ${loan.penaltyRate || 20}% P.A.`, 115, 97);
+  doc.text(`Current Status: ${loan.status}`, 115, 92);
+  doc.text(`Valuation Date: ${evaluationDate.toLocaleDateString()}`, 115, 97);
+  doc.text(`(BS: ${nepaliEval})`, 115, 102);
 
   // --- Table of Dues ---
   let duesSubtotal = 0;
   const tableData: any[][] = [];
 
   // 1. Accrued Interest
-  const interest = Math.ceil(loan.stats.unpaidBaseInterest);
-  const penalty = Math.ceil(loan.stats.unpaidPenaltyInterest);
+  const interest = Math.ceil(stats.unpaidBaseInterest);
+  const penalty = Math.ceil(stats.unpaidPenaltyInterest);
   
   tableData.push(["Accrued Base Interest (Total)", formatCurrency(interest)]);
   duesSubtotal += interest;
@@ -98,12 +107,12 @@ export const generateLoanStatementPDF = (data: PDFData) => {
 
   // 2. Fees
   const sc = Math.ceil(loan.serviceChargeAmount || 0);
-  const isSCPaid = !!loan.stats.isServiceChargePaid;
+  const isSCPaid = !!stats.isServiceChargePaid;
   tableData.push([`Service Charge ${isSCPaid ? '(Settled)' : '(Unpaid)'}`, isSCPaid ? "Rs. 0" : formatCurrency(sc)]);
   if (!isSCPaid) duesSubtotal += sc;
 
   const rnOld = Math.ceil(loan.renewalAmount || 0);
-  const isRNOldPaid = !!loan.stats.isRenewalChargePaid;
+  const isRNOldPaid = !!stats.isRenewalChargePaid;
   if (rnOld > 0 || isRNOldPaid) {
     tableData.push([`Previous Renewal Fee ${isRNOldPaid ? '(Settled)' : '(Unpaid)'}`, isRNOldPaid ? "Rs. 0" : formatCurrency(rnOld)]);
     if (!isRNOldPaid) duesSubtotal += rnOld;
@@ -129,7 +138,7 @@ export const generateLoanStatementPDF = (data: PDFData) => {
   tableData.push(["Core Principal Balance", formatCurrency(principal)]);
 
   autoTable(doc, {
-    startY: 115,
+    startY: 125,
     head: [["Description", "Amount (NPR)"]],
     body: tableData,
     theme: "striped",

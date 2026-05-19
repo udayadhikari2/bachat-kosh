@@ -24,6 +24,7 @@ export interface ILoan extends Document {
   renewalPaid: number;
   advancePaid: number;
   renewalCount: number;
+  isOutflowRecorded: boolean;
   payments: {
     date: Date;
     amount: number;
@@ -79,6 +80,7 @@ const LoanSchema: Schema = new Schema(
     renewalPaid: { type: Number, default: 0 },
     advancePaid: { type: Number, default: 0 },
     renewalCount: { type: Number, default: 0 },
+    isOutflowRecorded: { type: Boolean, default: true },
     payments: [
       {
         date: { type: Date, default: Date.now },

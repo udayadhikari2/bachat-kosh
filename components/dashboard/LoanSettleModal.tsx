@@ -11,6 +11,7 @@ import { toast } from "react-hot-toast";
 import { getOrganization } from "@/lib/actions/organization";
 import { generateLoanStatementPDF } from "@/lib/utils/pdf-generator";
 import { FileText, Download } from "lucide-react";
+import Image from "next/image";
 
 
 interface LoanSettleModalProps {
@@ -53,11 +54,45 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
   // Renewal during settlement state
   const [shouldRenew, setShouldRenew] = useState(defaultRenew || false);
   const [extensionDays, setExtensionDays] = useState<number>(180);
-  const [newRenewalFee, setNewRenewalFee] = useState<string>(Math.ceil(loan.serviceChargeAmount || 0).toString());
-  const parsedRenewalFee = Math.ceil(parseFloat(newRenewalFee) || 0);
+  const [newRenewalFee, setNewRenewalFee] = useState<string>("");
+  const [isAutoFee, setIsAutoFee] = useState(true);
 
+  const rate = loan.serviceCharge || 0.5;
+  const R = rate / 100;
+
+  const currentTermStartDate = useMemo(() => {
+    if (loan.renewalHistory && loan.renewalHistory.length > 0) {
+      return new Date(loan.renewalHistory[loan.renewalHistory.length - 1].date);
+    }
+    return new Date(loan.activatedAt);
+  }, [loan.activatedAt, loan.renewalHistory]);
 
   const [modalStats, setModalStats] = useState(loan.stats);
+
+
+  const maxAllowedDate = useMemo(() => {
+    const basePeriodEnd = new Date(currentTermStartDate.getTime() + 180 * 24 * 60 * 60 * 1000);
+    const today = new Date();
+    // Allow future selection only up to 180 days from the start of the current term.
+    return basePeriodEnd > today ? basePeriodEnd : today;
+  }, [currentTermStartDate]);
+
+  const isFutureAllowed = useMemo(() => {
+    return maxAllowedDate > new Date();
+  }, [maxAllowedDate]);
+
+  const displayStats = useMemo(() => {
+    const evalDate = new Date(effectiveDate);
+    const diffTime = evalDate.getTime() - currentTermStartDate.getTime();
+    const total = Math.max(0, Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+    
+    // The base period is 180 days from the term start. 
+    // This matches the logic where renewal restarts the 180-day standard interest clock.
+    const base = Math.min(total, 180);
+    const exceed = Math.max(0, total - 180);
+    
+    return { base, exceed, total };
+  }, [currentTermStartDate, effectiveDate]);
 
   // Recalculate stats when effective date changes
   useEffect(() => {
@@ -81,20 +116,23 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
         const activationDate = new Date(loan.activatedAt);
         const evaluationDate = new Date(effectiveDate);
         
-        const diffTime = Math.abs(evaluationDate.getTime() - activationDate.getTime());
+        const diffTime = Math.abs(evaluationDate.getTime() - currentTermStartDate.getTime());
         const daysElapsed = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
 
         generateLoanStatementPDF({
           loan,
           organization: res.data,
           user: loan.userId,
-          activationDate,
+          activationDate: currentTermStartDate,
           evaluationDate,
           daysElapsed,
           includeRenewalFee: shouldRenew,
           renewalFeeAmount: parsedRenewalFee,
           advanceAmountUsed: useAdvance ? advanceToConsume : 0,
-          availableAdvanceBalance: availableAdvance
+          availableAdvanceBalance: availableAdvance,
+          baseDays: stats.baseDays,
+          exceedDays: stats.exceedDays,
+          stats: stats
         });
         toast.success("Detailed Bill generated successfully");
       } else {
@@ -109,7 +147,21 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
 
 
   
-  // Calculate specific outstandings for better admin context
+  // Evaluate for calculations in UI
+  const cashDeposit = useMemo(() => {
+    try {
+      const sanitized = displayAmount.replace(/[^0-9+\-*/.]/g, '');
+      const cashAmount = Math.ceil(eval(sanitized) || 0);
+      return cashAmount;
+    } catch {
+      return 0;
+    }
+  }, [displayAmount]);
+
+  const grossSettleAmount = useMemo(() => {
+    return cashDeposit + (useAdvance ? advanceToConsume : 0);
+  }, [cashDeposit, useAdvance, advanceToConsume]);
+
   const getOutstandingForType = (type: PaymentType) => {
     let raw = 0;
     switch (type) {
@@ -131,40 +183,51 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
   const interestOutstanding = getOutstandingForType("INTEREST");
   const extrasTotal = scOutstanding + rnOutstanding + penaltyOutstanding + interestOutstanding;
 
-  // Evaluate for calculations in UI
-  const cashDeposit = useMemo(() => {
-    try {
-      const sanitized = displayAmount.replace(/[^0-9+\-*/.]/g, '');
-      const cashAmount = Math.ceil(eval(sanitized) || 0);
-      return cashAmount;
-    } catch {
-      return 0;
+  const currentBalance = loan.balanceAmount ?? loan.principalAmount;
+
+  const dynamicRenewalFee = useMemo(() => {
+    if (!shouldRenew) return 0;
+    
+    const remainingAfterExtras = Math.max(0, grossSettleAmount - (interestOutstanding + penaltyOutstanding + scOutstanding + rnOutstanding));
+    
+    if (remainingAfterExtras <= 0) {
+      return Math.ceil(currentBalance * R);
     }
-  }, [displayAmount]);
 
-  const grossSettleAmount = useMemo(() => {
-    return cashDeposit + (useAdvance ? advanceToConsume : 0);
-  }, [cashDeposit, useAdvance, advanceToConsume]);
+    const maxFee = currentBalance * R;
+    if (remainingAfterExtras <= maxFee) {
+      return Math.ceil(maxFee);
+    }
 
-  const totalLiability = Math.ceil(Math.max(0, (stats.totalAmountToPay - totalPaid) + (shouldRenew ? parsedRenewalFee : 0)));
+    const fee = (R * (currentBalance - remainingAfterExtras)) / (1 - R);
+    return Math.ceil(Math.max(0, fee));
+  }, [shouldRenew, grossSettleAmount, currentBalance, R, interestOutstanding, penaltyOutstanding, scOutstanding, rnOutstanding]);
+
+  const parsedRenewalFee = isAutoFee ? dynamicRenewalFee : (Math.ceil(parseFloat(newRenewalFee) || 0));
+
+  useEffect(() => {
+    if (isAutoFee) {
+      setNewRenewalFee(dynamicRenewalFee.toString());
+    }
+  }, [dynamicRenewalFee, isAutoFee]);
+
+  // The net amount needed to clear everything INCLUDING current renewal if requested
+  const totalLiability = Math.ceil(stats.outstandingAmount + (shouldRenew ? parsedRenewalFee : 0));
   const netSettlementLiability = Math.ceil(Math.max(0, totalLiability - availableAdvance));
   
   const totalRequiredToRenew = extrasTotal + parsedRenewalFee;
   const canRenew = grossSettleAmount >= totalRequiredToRenew;
   
-  const outstandingTotal = Math.ceil(Math.max(0, stats.totalAmountToPay - totalPaid));
+  const outstandingTotal = Math.ceil(stats.outstandingAmount);
   const isFullSettlement = grossSettleAmount >= outstandingTotal && outstandingTotal > 0;
   const isOverpaying = grossSettleAmount > outstandingTotal;
 
   // Automatic distribution logic
   useEffect(() => {
-    // Safely evaluate the displayAmount
     let evaluated = 0;
     try {
-      // Basic sanitizer: only allow numbers and operators
       const sanitized = displayAmount.replace(/[^0-9+\-*/.]/g, '');
       if (sanitized) {
-        // Simple evaluator for basic math
         evaluated = eval(sanitized) || 0;
       }
     } catch {
@@ -176,11 +239,8 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
       PRINCIPAL: 0, INTEREST: 0, PENALTY: 0, RENEWAL: 0, SERVICE_CHARGE: 0, ADVANCE: 0
     };
 
-    // Distribute based on priority order for SELECTED types
-    // Except PRINCIPAL, which depends on excessMode if we consider it "excess" 
-    // Actually, let's keep the priority loop but handle the tail manually if needed
     for (const type of PRIORITY_ORDER) {
-      if (type === "PRINCIPAL") continue; // Handle tail separately for choice
+      if (type === "PRINCIPAL") continue;
 
       if (selectedTypes.has(type) && remaining > 0) {
         const outstanding = getOutstandingForType(type);
@@ -190,7 +250,6 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
       }
     }
 
-    // Handle Principal vs Advance vs Over-Settlement
     const extrasThreshold = extrasTotal + (shouldRenew ? parsedRenewalFee : 0);
     const principalBalance = getOutstandingForType("PRINCIPAL");
     
@@ -198,11 +257,9 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
       const surplus = remaining;
 
       if (surplus >= principalBalance) {
-        // FULL SETTLEMENT CASE: Clear EVERYTHING first, then Advance
         nextAllocations.PRINCIPAL = principalBalance;
         nextAllocations.ADVANCE = surplus - principalBalance;
       } else {
-        // PARTIAL PRINCIPAL CASE: Offer choice between Benefit (Reduction) and Credit (Advance)
         if (excessMode === "PRINCIPAL") {
           nextAllocations.PRINCIPAL = surplus;
         } else {
@@ -215,7 +272,6 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
     setAllocations(nextAllocations);
   }, [displayAmount, selectedTypes, excessMode, extrasTotal, shouldRenew, parsedRenewalFee]);
 
-  // Amount Entry Auto-Selection Logic
   const handleAmountChange = (val: string) => {
     setDisplayAmount(val);
     
@@ -243,19 +299,22 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
           }
         }
       }
+      if (shouldRenew) {
+        nextSelected.add("RENEWAL");
+      }
       setSelectedTypes(nextSelected);
     } else {
-      setSelectedTypes(new Set([]));
+      setSelectedTypes(shouldRenew ? new Set(["RENEWAL"]) : new Set([]));
     }
   };
 
   const handleClearDue = () => {
-    // To clear the loan, we need to settle the netSettlementLiability in cash
-    // while consuming the available advance.
     setUseAdvance(true);
     setAdvanceToConsume(availableAdvance);
     setDisplayAmount(netSettlementLiability.toString());
-    setSelectedTypes(new Set(PRIORITY_ORDER));
+    const nextSelected = new Set(PRIORITY_ORDER);
+    if (shouldRenew) nextSelected.add("RENEWAL");
+    setSelectedTypes(nextSelected);
   };
 
   const bsSelected = useMemo(() => adToBs(new Date(effectiveDate)), [effectiveDate]);
@@ -302,15 +361,12 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
     }
   };
 
-  const paymentTypesList: { value: PaymentType; label: string; color: string; icon: any }[] = [
-    { value: "SERVICE_CHARGE", label: "Activation/Service Fee", color: "from-slate-600 to-slate-800", icon: ShieldCheck },
-    { value: "INTEREST", label: "Interest", color: "from-blue-600 to-indigo-600", icon: Info },
-    { value: "PENALTY", label: "Penalty", color: "from-rose-600 to-pink-600", icon: AlertCircle },
-    { value: "RENEWAL", label: "Renewal Charge", color: "from-amber-600 to-orange-600", icon: RefreshCw },
-    { value: "PRINCIPAL", label: "Principal", color: "from-emerald-600 to-teal-600", icon: CheckCircle2 },
-  ];
-
   const toggleType = (type: PaymentType) => {
+    if (shouldRenew && type === "RENEWAL") {
+      toast.error("Renewal fee is mandatory when Renewal Status is active");
+      return;
+    }
+
     const next = new Set(selectedTypes);
     if (next.has(type)) {
       if (next.size > 1) next.delete(type);
@@ -328,9 +384,19 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
       <div className="px-8 pt-8 pb-6 flex flex-col md:flex-row md:items-center justify-between gap-6 border-b border-white/5">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center relative group">
+            <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center relative group overflow-hidden">
               <div className="absolute inset-0 bg-emerald-500/20 blur-xl opacity-0 group-hover:opacity-100 transition-opacity" />
-              <CreditCard className="w-6 h-6 text-emerald-400 relative z-10" />
+              {loan.userId?.profileImage ? (
+                <Image 
+                  src={loan.userId.profileImage} 
+                  alt={loan.userId.name} 
+                  fill 
+                  sizes="48px"
+                  className="object-cover relative z-10" 
+                />
+              ) : (
+                <CreditCard className="w-6 h-6 text-emerald-400 relative z-10" />
+              )}
             </div>
             <div>
               <h1 className="text-xl font-black text-white tracking-tight">Collective Settlement</h1>
@@ -358,7 +424,8 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                     setDateChangeMessage(msg);
                     setTimeout(() => setDateChangeMessage(null), 4000);
                   }} 
-                  disableFuture={true}
+                  maxDate={maxAllowedDate.toISOString()}
+                  startYear={adToBs(new Date()).year - 10}
                 />
                 
                 {dateChangeMessage && (
@@ -376,6 +443,11 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                    </div>
                 )}
              </div>
+             {isFutureAllowed && (
+                <div className="flex items-center gap-1.5 ml-4 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
+                   <span className="text-[7px] font-black text-blue-400 uppercase tracking-widest leading-none">Base Period Unlocked (Up to Day 180)</span>
+                </div>
+             )}
           </div>
         </div>
 
@@ -501,7 +573,30 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                 </div>
                 <button
                     type="button"
-                    onClick={() => setShouldRenew(!shouldRenew)}
+                    onClick={() => {
+                      const next = !shouldRenew;
+                      
+                      // Calculate current and next net liability for auto-syncing the amount
+                      const currentLiability = netSettlementLiability;
+                      
+                      // Temporarily toggle to calculate the NEXT liability
+                      // Since netSettlementLiability is derived from shouldRenew, we can't just access it easily here without duplication or another memo
+                      // But we can approximate it:
+                      const nextLiability = next 
+                        ? currentLiability + parsedRenewalFee 
+                        : Math.max(0, currentLiability - parsedRenewalFee);
+
+                      // If the current display amount matches the current liability (Clear Due mode),
+                      // we automatically update it to the next liability to keep the "bill" updated.
+                      if (displayAmount === currentLiability.toString()) {
+                        setDisplayAmount(nextLiability.toString());
+                      }
+
+                      setShouldRenew(next);
+                      if (next) {
+                        setSelectedTypes(prev => new Set([...Array.from(prev), "RENEWAL" as PaymentType]));
+                      }
+                    }}
                     className={`w-12 h-6 rounded-full transition-all relative ${shouldRenew ? "bg-amber-500" : "bg-slate-800"}`}
                 >
                     <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${shouldRenew ? "left-7" : "left-1"}`} />
@@ -513,15 +608,29 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-2">
                        <label className="text-[9px] text-slate-500 font-black uppercase tracking-widest px-1">Renewal Charge (RE)</label>
-                       <div className="relative">
-                          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-amber-500/50">Rs.</span>
-                          <input 
-                            type="number"
-                            value={newRenewalFee}
-                            readOnly
-                            className="w-full bg-black/20 border border-amber-500/10 rounded-xl pl-8 pr-3 py-2 text-xs font-bold text-slate-500 outline-none cursor-not-allowed shadow-inner"
-                          />
-                       </div>
+                       <div className="relative group">
+                           <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-amber-500/50 group-focus-within:text-amber-500 transition-colors">Rs.</span>
+                           <input 
+                             type="number"
+                             value={newRenewalFee}
+                             onChange={(e) => {
+                               setNewRenewalFee(e.target.value);
+                               setIsAutoFee(false);
+                             }}
+                             className={`w-full bg-black/20 border rounded-xl pl-8 pr-10 py-2 text-xs font-bold transition-all shadow-inner outline-none ${isAutoFee ? "border-amber-500/10 text-slate-500" : "border-amber-500/40 text-amber-500"}`}
+                             placeholder="0"
+                           />
+                           {!isAutoFee && (
+                             <button 
+                               type="button"
+                               onClick={() => setIsAutoFee(true)}
+                               className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-amber-500 hover:text-white transition-colors"
+                               title="Reset to Auto-Calculate"
+                             >
+                               <RefreshCw className="w-3 h-3" />
+                             </button>
+                           )}
+                        </div>
                     </div>
                     <div className="space-y-2">
                        <label className="text-[9px] text-slate-500 font-black uppercase tracking-widest px-1">Extend For</label>
@@ -546,6 +655,33 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                </div>
              )}
           </section>
+          
+          {/* Compact Timeline Analytics */}
+          <div className="flex items-center gap-2 bg-white/[0.03] border border-white/5 p-3 rounded-2xl">
+             <div className="flex-1 flex items-center gap-3 px-3">
+                <Calendar className="w-3.5 h-3.5 text-blue-400 opacity-50" />
+                <div>
+                   <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Base (≤180d)</p>
+                   <p className="text-[11px] font-black text-white leading-none mt-1">{displayStats.base} <span className="text-[8px] text-slate-600 font-bold uppercase ml-0.5">Days</span></p>
+                </div>
+             </div>
+             <div className="w-px h-6 bg-white/5" />
+             <div className="flex-1 flex items-center gap-3 px-3">
+                <AlertCircle className={`w-3.5 h-3.5 ${displayStats.exceed > 0 ? 'text-rose-500' : 'text-slate-700'}`} />
+                <div>
+                   <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Exceed (&gt;180d)</p>
+                   <p className={`text-[11px] font-black leading-none mt-1 ${displayStats.exceed > 0 ? 'text-rose-500' : 'text-white'}`}>{displayStats.exceed} <span className="text-[8px] text-slate-600 font-bold uppercase ml-0.5">Days</span></p>
+                </div>
+             </div>
+             <div className="w-px h-6 bg-white/5" />
+             <div className="flex-1 flex items-center gap-3 px-3">
+                <RefreshCw className="w-3.5 h-3.5 text-emerald-400 opacity-50" />
+                <div>
+                   <p className="text-[7px] font-black text-slate-500 uppercase tracking-widest">Total Period</p>
+                   <p className="text-[11px] font-black text-white leading-none mt-1">{displayStats.total} <span className="text-[8px] text-slate-600 font-bold uppercase ml-0.5">Days</span></p>
+                </div>
+             </div>
+          </div>
 
           {/* Detailed Financial Table */}
           <div className="flex items-center justify-between px-2 mb-3">
@@ -624,9 +760,8 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                   <td colSpan={2} className="px-5 py-3 text-[9px] font-black text-slate-500 uppercase tracking-widest">Subtotal (Excl. Principal)</td>
                   <td className="px-5 py-3 text-right text-[10px] font-bold text-slate-400">Rs. {Math.ceil(scOutstanding + interestOutstanding + penaltyOutstanding + rnOutstanding + (shouldRenew ? parsedRenewalFee : 0)).toLocaleString()}</td>
 
-                  <td className="px-5 py-3 text-right text-[10px] font-black text-slate-300">
+                  <td className="px-5 py-3 text-right text-[10px] font-black text-emerald-400">
                     Rs. {Math.ceil(allocations.SERVICE_CHARGE + allocations.INTEREST + allocations.PENALTY + allocations.RENEWAL).toLocaleString()}
-
                   </td>
                 </tr>
 
@@ -935,7 +1070,7 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
 }
 
 function Row({ label, value, allocated, isSelected, onToggle, color, disabled, isStatic }: any) {
-if (value <= 0 && label !== "Principal Balance" && label !== "Principal Reduction") return null;
+if (value <= 0 && label !== "Principal Balance" && label !== "Principal Reduction" && label !== "Renewal Fee (Current)") return null;
 
 return (
   <tr 

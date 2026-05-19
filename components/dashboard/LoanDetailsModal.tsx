@@ -5,6 +5,7 @@ import {
   ArrowUpRight, ArrowDownRight, RefreshCw, CheckCircle2, 
   AlertCircle, Clock, ShieldCheck, TrendingUp, HandCoins
 } from "lucide-react";
+import Image from "next/image";
 import { adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
 
 interface LoanDetailsModalProps {
@@ -112,10 +113,20 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
       {/* Header */}
       <div className="px-10 pt-10 pb-8 flex items-end justify-between border-b border-white/5 bg-slate-950/50 backdrop-blur-xl shrink-0 relative z-10">
         <div className="flex items-center gap-6">
-          <div className="w-16 h-16 bg-gradient-to-br from-emerald-500/20 to-teal-500/10 rounded-2xl border border-white/10 flex items-center justify-center shadow-lg shadow-black/20">
-            <div className="w-10 h-10 rounded-xl bg-slate-950 flex items-center justify-center">
-               <User className="w-6 h-6 text-emerald-400" />
-            </div>
+          <div className="w-16 h-16 bg-gradient-to-br from-emerald-500/20 to-teal-500/10 rounded-2xl border border-white/10 flex items-center justify-center shadow-lg shadow-black/20 overflow-hidden relative">
+            {loan.userId?.profileImage ? (
+              <Image 
+                src={loan.userId.profileImage} 
+                alt={loan.userId.name} 
+                fill 
+                sizes="64px"
+                className="object-cover" 
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-slate-950 flex items-center justify-center">
+                 <User className="w-6 h-6 text-emerald-400" />
+              </div>
+            )}
           </div>
           <div>
             <h1 className="text-3xl font-black text-white tracking-tighter">{loan.userId?.name}</h1>

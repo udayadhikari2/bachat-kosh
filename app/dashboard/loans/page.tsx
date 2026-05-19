@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
+import { motion, AnimatePresence } from "framer-motion";
 import {
   HandCoins, Plus, CheckCircle2, AlertCircle, TrendingUp,
   ShieldCheck, Clock, UserCheck, ShieldAlert,
@@ -11,11 +12,22 @@ import {
 } from "lucide-react";
 
 
+import dynamic from "next/dynamic";
 import PageHeader from "@/components/dashboard/PageHeader";
-import LoanRequestForm from "@/components/dashboard/LoanRequestForm";
-import LoanSettleModal from "@/components/dashboard/LoanSettleModal";
-import LoanDetailsModal from "@/components/dashboard/LoanDetailsModal";
 import NepaliDatePicker from "@/components/dashboard/NepaliDatePicker";
+
+const LoanRequestForm = dynamic(() => import("@/components/dashboard/LoanRequestForm"), {
+  loading: () => <div className="p-8 bg-slate-900 animate-pulse rounded-[40px] h-96" />,
+  ssr: false
+});
+
+const LoanSettleModal = dynamic(() => import("@/components/dashboard/LoanSettleModal"), {
+  ssr: false
+});
+
+const LoanDetailsModal = dynamic(() => import("@/components/dashboard/LoanDetailsModal"), {
+  ssr: false
+});
 import {
   getLoans, getLoanHistory, approveLoan, verifyLoan,
   getFinancialHealth, deleteLoans, clearLoanHistory, undoLastSettlement,
@@ -24,8 +36,9 @@ import {
 import { verifyAdminPassword } from "@/lib/actions/user";
 import { toast } from "react-hot-toast";
 import { adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
+import Image from "next/image";
 
-type ActiveModal = "settle" | "delete" | "details" | "clearHistory" | "undo" | "revenueAudit" | "advanceAudit" | "pendingApprovals" | null;
+type ActiveModal = "settle" | "delete" | "details" | "clearHistory" | "undo" | "revenueAudit" | "advanceAudit" | "pendingApprovals" | "activate" | null;
 
 export default function LoansPage() {
   const { data: session } = useSession();
@@ -39,6 +52,7 @@ export default function LoansPage() {
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(20);
   const [pagination, setPagination] = useState<any>({ total: 0, pages: 1, currentPage: 1 });
 
   // Selection State
@@ -68,6 +82,7 @@ export default function LoansPage() {
   const [auditTitle, setAuditTitle] = useState("");
   const [recordTypes, setRecordTypes] = useState<string[]>([]);
   const [auditTab, setAuditTab] = useState<string>("");
+  const [advanceSubTab, setAdvanceSubTab] = useState<"available" | "cleared">("available");
 
   // Refs
   const portfolioTableRef = useRef<HTMLDivElement>(null);
@@ -76,6 +91,8 @@ export default function LoansPage() {
   const [deletePassword, setDeletePassword] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
+  const [verifyTargetId, setVerifyTargetId] = useState<string | null>(null);
+  const [recordOutflow, setRecordOutflow] = useState(true);
 
   const user = session?.user as any;
   const isAdmin = user?.role === "ADMIN";
@@ -93,7 +110,7 @@ export default function LoansPage() {
     setLoading(true);
     try {
       const [loansRes, healthRes] = await Promise.all([
-        getLoans({ organizationId, page: currentPage, limit: 10, search: debouncedSearch }),
+        getLoans({ organizationId, page: currentPage, limit: itemsPerPage, search: debouncedSearch }),
 
         getFinancialHealth(organizationId)
       ]);
@@ -109,7 +126,7 @@ export default function LoansPage() {
     } finally {
       setLoading(false);
     }
-  }, [organizationId, currentPage]);
+  }, [organizationId, currentPage, itemsPerPage, debouncedSearch]);
 
 
   const fetchHistory = useCallback(async () => {
@@ -152,10 +169,24 @@ export default function LoansPage() {
     else toast.error(res.error || "Approval failed");
   };
 
-  const handleVerify = async (loanId: string) => {
-    const res = await verifyLoan(loanId, user.id);
-    if (res.success) { toast.success("Loan verified and activated"); fetchData(); }
+  const handleVerify = (loanId: string) => {
+    setVerifyTargetId(loanId);
+    setRecordOutflow(true); // Default to true as per request
+    setActiveModal("activate");
+  };
+
+  const handleVerifyConfirm = async () => {
+    if (!verifyTargetId) return;
+    setDeleteLoading(true);
+    const res = await verifyLoan(verifyTargetId, user.id, recordOutflow);
+    if (res.success) { 
+      toast.success(recordOutflow ? "Loan activated and recorded as outflow" : "Loan activated (Historic/Migration mode)"); 
+      fetchData(); 
+      setActiveModal(null);
+      setVerifyTargetId(null);
+    }
     else toast.error(res.error || "Verification failed");
+    setDeleteLoading(false);
   };
 
   const handleDeleteConfirm = async () => {
@@ -234,7 +265,7 @@ export default function LoansPage() {
     setRecordTypes(types);
     setAuditTab(types[0]);
     setActiveModal("revenueAudit");
-    
+
     if (!organizationId) return;
     setAuditLoading(true);
     const res = await getFinancialAuditLogs(organizationId);
@@ -246,7 +277,10 @@ export default function LoansPage() {
     setAuditLoading(false);
   };
 
-  const handleOpenAdvanceAudit = () => handleOpenAudit(["ADVANCE"], "Advanced Payment Audit Trail");
+  const handleOpenAdvanceAudit = () => {
+    setAdvanceSubTab("available");
+    handleOpenAudit(["ADVANCE"], "Advanced Payment Audit Trail");
+  };
   const handleOpenPendingApprovals = () => setActiveModal("pendingApprovals");
 
   const scrollToTable = () => {
@@ -330,126 +364,128 @@ export default function LoansPage() {
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 text-white">
         {/* Core Financials */}
-        <div 
+        <div
           onClick={scrollToTable}
           className="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl backdrop-blur-sm shadow-xl ring-1 ring-white/5 cursor-pointer hover:border-emerald-500/50 transition-all group active:scale-95"
         >
           <div className="flex justify-between items-start mb-3">
-             <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/10">
-                   <TrendingUp className="w-4 h-4 text-emerald-400" />
-                </div>
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Portfolio</span>
-             </div>
-             <ArrowDownCircle className="w-3 h-3 text-slate-700 group-hover:text-emerald-400 transition-colors" />
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/10">
+                <TrendingUp className="w-4 h-4 text-emerald-400" />
+              </div>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Active Portfolio</span>
+            </div>
+            <ArrowDownCircle className="w-3 h-3 text-slate-700 group-hover:text-emerald-400 transition-colors" />
           </div>
           <div className="text-xl font-black">Rs. {health?.totalActiveLoans?.toLocaleString() || 0}</div>
         </div>
 
         <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl backdrop-blur-sm shadow-xl ring-1 ring-white/5">
           <div className="flex items-center gap-3 mb-3">
-             <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
-                <Wallet className="w-4 h-4 text-blue-400" />
-             </div>
-             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available Funds</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
+              <Wallet className="w-4 h-4 text-blue-400" />
+            </div>
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Available Funds</span>
           </div>
           <div className="text-xl font-black">Rs. {health?.availableBalance?.toLocaleString() || 0}</div>
         </div>
 
         {/* Interactive Revenue Cards */}
-        <div 
+        <div
           onClick={() => handleOpenAudit(["INTEREST", "PENALTY"], "Collected Interest Audit Trail")}
           className="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl backdrop-blur-sm shadow-xl ring-1 ring-white/5 cursor-pointer hover:border-emerald-500/50 transition-all group active:scale-95"
         >
           <div className="flex justify-between items-start mb-3">
-             <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/10">
-                   <Banknote className="w-4 h-4 text-emerald-400" />
-                </div>
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Collected Interest</span>
-             </div>
-             <Info className="w-3 h-3 text-slate-700 group-hover:text-emerald-400 transition-colors" />
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center border border-emerald-500/10">
+                <Banknote className="w-4 h-4 text-emerald-400" />
+              </div>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Collected Interest</span>
+            </div>
+            <Info className="w-3 h-3 text-slate-700 group-hover:text-emerald-400 transition-colors" />
           </div>
           <div className="text-xl font-black text-emerald-400">Rs. {health?.totalCollectedInterestSettled?.toLocaleString() || 0}</div>
         </div>
 
-        <div 
+        <div
           onClick={() => handleOpenAudit(["SERVICE_CHARGE", "RENEWAL"], "Collected Fees (SC/RC) Audit Trail")}
           className="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl backdrop-blur-sm shadow-xl ring-1 ring-white/5 cursor-pointer hover:border-blue-500/50 transition-all group active:scale-95"
         >
           <div className="flex justify-between items-start mb-3">
-             <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
-                   <Gauge className="w-4 h-4 text-blue-400" />
-                </div>
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Collected SC/RC</span>
-             </div>
-             <Info className="w-3 h-3 text-slate-700 group-hover:text-blue-400 transition-colors" />
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
+                <Gauge className="w-4 h-4 text-blue-400" />
+              </div>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Collected SC/RC</span>
+            </div>
+            <Info className="w-3 h-3 text-slate-700 group-hover:text-blue-400 transition-colors" />
           </div>
           <div className="text-xl font-black text-blue-400">Rs. {health?.totalFeesPaidGlobal?.toLocaleString() || 0}</div>
         </div>
 
         <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl backdrop-blur-sm shadow-xl ring-1 ring-white/5">
           <div className="flex items-center gap-3 mb-3">
-             <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
-                <Gauge className="w-4 h-4 text-blue-400" />
-             </div>
-             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Live Accrued Interest</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/10">
+              <Gauge className="w-4 h-4 text-blue-400" />
+            </div>
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Live Accrued Interest</span>
           </div>
           <div className="text-xl font-black text-blue-400">Rs. {health?.totalAccruedInterestActive?.toLocaleString() || 0}</div>
         </div>
 
         <div className="p-4 bg-slate-900/50 border border-slate-800 rounded-2xl backdrop-blur-sm shadow-xl ring-1 ring-white/5">
           <div className="flex items-center gap-3 mb-3">
-             <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
-                <FileClock className="w-4 h-4 text-amber-400" />
-             </div>
-             <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Outstanding Fees (SC/RE)</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-500/10 flex items-center justify-center border border-amber-500/10">
+              <FileClock className="w-4 h-4 text-amber-400" />
+            </div>
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Outstanding Fees (SC/RE)</span>
           </div>
           <div className="text-xl font-black text-amber-400">Rs. {health?.totalOutstandingFeesActive?.toLocaleString() || 0}</div>
         </div>
 
-        <div 
-          onClick={handleOpenAdvanceAudit}
-          className="p-5 bg-gradient-to-br from-emerald-950/40 via-slate-900/50 to-slate-950 border border-emerald-500/20 rounded-3xl backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.3)] ring-1 ring-white/5 relative overflow-hidden group cursor-pointer hover:border-emerald-500/50 transition-all active:scale-95"
-        >
-          <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 blur-[40px] -translate-y-1/2 translate-x-1/2 group-hover:bg-emerald-500/10 transition-all duration-700" />
-          <div className="flex justify-between items-start mb-4 relative z-10">
-             <div className="flex items-center gap-3">
+        {health?.totalAdvancePaidActive > 0 && (
+          <div
+            onClick={handleOpenAdvanceAudit}
+            className="p-5 bg-gradient-to-br from-emerald-950/40 via-slate-900/50 to-slate-950 border border-emerald-500/20 rounded-3xl backdrop-blur-md shadow-[0_20px_50px_rgba(0,0,0,0.3)] ring-1 ring-white/5 relative overflow-hidden group cursor-pointer hover:border-emerald-500/50 transition-all active:scale-95"
+          >
+            <div className="absolute top-0 right-0 w-24 h-24 bg-emerald-500/5 blur-[40px] -translate-y-1/2 translate-x-1/2 group-hover:bg-emerald-500/10 transition-all duration-700" />
+            <div className="flex justify-between items-start mb-4 relative z-10">
+              <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 group-hover:border-emerald-500/40 transition-colors">
-                   <Banknote className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform duration-500" />
+                  <Banknote className="w-5 h-5 text-emerald-400 group-hover:scale-110 transition-transform duration-500" />
                 </div>
                 <div>
-                   <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block">Member Credits</span>
-                   <span className="text-[9px] text-emerald-500/60 font-bold uppercase tracking-widest">Aggregate Pool</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] block">Member Credits</span>
+                  <span className="text-[9px] text-emerald-500/60 font-bold uppercase tracking-widest">Aggregate Pool</span>
                 </div>
-             </div>
-             <div className="p-2 bg-white/5 rounded-lg border border-white/5 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/20 transition-all">
+              </div>
+              <div className="p-2 bg-white/5 rounded-lg border border-white/5 group-hover:bg-emerald-500/10 group-hover:border-emerald-500/20 transition-all">
                 <Info className="w-3 h-3 text-slate-600 group-hover:text-emerald-400" />
-             </div>
+              </div>
+            </div>
+            <div className="relative z-10">
+              <span className="text-[10px] font-bold text-slate-500 mr-1.5 uppercase font-mono">Rs.</span>
+              <span className="text-3xl font-black text-white tracking-tighter tabular-nums drop-shadow-sm">
+                {health?.totalAdvancePaidActive?.toLocaleString() || 0}
+              </span>
+            </div>
           </div>
-          <div className="relative z-10">
-            <span className="text-[10px] font-bold text-slate-500 mr-1.5 uppercase font-mono">Rs.</span>
-            <span className="text-3xl font-black text-white tracking-tighter tabular-nums drop-shadow-sm">
-               {health?.totalAdvancePaidActive?.toLocaleString() || 0}
-            </span>
-          </div>
-        </div>
+        )}
 
-        <div 
+        <div
           onClick={handleOpenPendingApprovals}
           className={`p-4 bg-slate-900/50 border border-slate-800 rounded-2xl backdrop-blur-sm shadow-xl ring-1 ring-white/5 cursor-pointer transition-all group active:scale-95 ${loans.filter(l => l.status === "PENDING").length > 0 ? "hover:border-amber-500/50" : "hover:border-slate-700"}`}
         >
           <div className="flex justify-between items-start mb-3">
-             <div className="flex items-center gap-3">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center border ${loans.filter(l => l.status === "PENDING").length > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-slate-500/10 border-slate-500/10"}`}>
-                   <Clock className={`w-4 h-4 ${loans.filter(l => l.status === "PENDING").length > 0 ? "text-amber-400 animate-blink" : "text-slate-500"}`} />
-                </div>
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Pending Appr.</span>
-             </div>
-             {loans.filter(l => l.status === "PENDING").length > 0 && (
-               <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)] animate-blink" />
-             )}
+            <div className="flex items-center gap-3">
+              <div className={`w-8 h-8 rounded-lg flex items-center justify-center border ${loans.filter(l => l.status === "PENDING").length > 0 ? "bg-amber-500/10 border-amber-500/20" : "bg-slate-500/10 border-slate-500/10"}`}>
+                <Clock className={`w-4 h-4 ${loans.filter(l => l.status === "PENDING").length > 0 ? "text-amber-400 animate-blink" : "text-slate-500"}`} />
+              </div>
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Pending Appr.</span>
+            </div>
+            {loans.filter(l => l.status === "PENDING").length > 0 && (
+              <div className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)] animate-blink" />
+            )}
           </div>
           <div className={`text-xl font-black ${loans.filter(l => l.status === "PENDING").length > 0 ? "text-amber-400" : "text-slate-500"}`}>
             {loans.filter(l => l.status === "PENDING").length}
@@ -529,8 +565,8 @@ export default function LoansPage() {
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-4">
                 <div className={`w-12 h-12 rounded-[18px] border flex items-center justify-center transition-all duration-500 shadow-inner ${showHistory
-                    ? "bg-slate-500/10 border-slate-500/20 text-slate-400 rotate-12"
-                    : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 -rotate-6 group-hover:rotate-0"
+                  ? "bg-slate-500/10 border-slate-500/20 text-slate-400 rotate-12"
+                  : "bg-emerald-500/10 border-emerald-500/20 text-emerald-400 -rotate-6 group-hover:rotate-0"
                   }`}>
                   {showHistory ? <HistoryIcon className="w-6 h-6" /> : <HandCoins className="w-6 h-6" />}
                 </div>
@@ -568,62 +604,6 @@ export default function LoansPage() {
 
               <div className="flex items-center gap-3">
 
-                {/* Contextual Action Bar */}
-                {isAdmin && selectedIds.size > 0 && (
-                  <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/80 backdrop-blur-md border border-white/10 rounded-[20px] shadow-[0_10px_40px_rgba(0,0,0,0.4)] animate-in slide-in-from-right-4 duration-500 ring-1 ring-white/5">
-                    <div className="flex items-center gap-2 pr-4 border-r border-white/5 mr-2">
-                      <div className="w-6 h-6 bg-emerald-500/20 rounded-lg flex items-center justify-center">
-                        <span className="text-[10px] font-black text-emerald-400">{selectedIds.size}</span>
-                      </div>
-                      <span className="text-[9px] text-slate-400 font-black uppercase tracking-[0.1em]">
-                        Selected
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {!showHistory && selectedIds.size === 1 && singleSelectedLoan?.status === "ACTIVE" && (
-                        <>
-                          <button
-                            onClick={() => setActiveModal("settle")}
-                            className="group relative flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black uppercase rounded-xl transition-all shadow-[0_5px_15px_rgba(16,185,129,0.3)] active:scale-95 overflow-hidden"
-                          >
-                            <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-0 transition-transform duration-300" />
-                            <CreditCard className="w-3.5 h-3.5 relative z-10" />
-                            <span className="tracking-widest relative z-10">Settle</span>
-                          </button>
-                        </>
-                      )}
-
-                      {selectedIds.size === 1 && (
-                        <button
-                          onClick={() => setActiveModal("details")}
-                          className="group relative flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black uppercase rounded-xl transition-all shadow-[0_5px_15px_rgba(37,99,235,0.2)] active:scale-95 overflow-hidden"
-                        >
-                          <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-0 transition-transform duration-300" />
-                          <Eye className="w-3.5 h-3.5 relative z-10" />
-                          <span className="tracking-widest relative z-10">Details</span>
-                        </button>
-                      )}
-                      <button
-                        onClick={() => setActiveModal("delete")}
-                        className="group relative flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white text-[9px] font-black uppercase rounded-xl transition-all shadow-[0_5px_15px_rgba(225,29,72,0.2)] active:scale-95 overflow-hidden"
-                      >
-                        <div className="absolute inset-0 bg-white/20 -translate-x-full group-hover:translate-x-0 transition-transform duration-300" />
-                        <Trash2 className="w-3.5 h-3.5 relative z-10" />
-                        <span className="tracking-widest relative z-10">Delete</span>
-                      </button>
-                    </div>
-
-                    <button
-                      onClick={clearSelection}
-                      className="ml-2 p-2 text-slate-500 hover:text-white hover:bg-white/10 rounded-xl transition-all group"
-                      title="Clear Selection"
-                    >
-                      <X className="w-4 h-4 group-hover:rotate-90 transition-transform duration-300" />
-                    </button>
-                  </div>
-                )}
-
                 {/* History Toggles */}
                 {isAdmin && selectedIds.size === 0 && (
                   <div className="flex items-center gap-2">
@@ -639,8 +619,8 @@ export default function LoansPage() {
                     <button
                       onClick={() => { setShowHistory(v => !v); clearSelection(); }}
                       className={`flex items-center gap-2 px-3 py-2 rounded-xl text-[9px] font-black uppercase border transition-all ${showHistory
-                          ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white"
-                          : "bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white"
+                        ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500 hover:text-white"
+                        : "bg-slate-800/50 border-slate-700 text-slate-400 hover:border-slate-500 hover:text-white"
                         }`}
                     >
                       {showHistory ? <HandCoins className="w-3.5 h-3.5" /> : <HistoryIcon className="w-3.5 h-3.5" />}
@@ -694,26 +674,50 @@ export default function LoansPage() {
                       const isSelected = selectedIds.has(loan._id);
                       const totalPaid = loan.totalPaid || 0;
                       const outstanding = Math.max(0, Math.ceil(loan.stats?.totalAmountToPay || 0) - totalPaid);
+                      
+                      const isDanger = loan.stats.daysSinceLastEvent > 180;
+                      const isWarning = loan.stats.daysSinceLastEvent >= 173 && loan.stats.daysSinceLastEvent <= 180;
 
                       return (
                         <tr
                           key={loan._id}
-                          className={`group transition-all duration-200 ${isSelected ? "bg-emerald-500/5 border-l-2 border-emerald-500/40" : "hover:bg-slate-800/20"}`}
+                          className={`group transition-all duration-300 relative ${
+                            isSelected 
+                              ? "bg-emerald-500/5 border-l-2 border-emerald-500/40" 
+                              : isDanger
+                                ? "bg-rose-500/[0.03] hover:bg-rose-500/[0.06] border-l-2 border-rose-500/30"
+                                : isWarning
+                                  ? "bg-amber-500/[0.03] hover:bg-amber-500/[0.06] border-l-2 border-amber-500/30"
+                                  : "hover:bg-slate-800/20"
+                          }`}
                         >
                           {isAdmin && (
                             <td className="px-4 py-3.5">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => toggleSelect(loan._id)}
-                                className="w-3.5 h-3.5 accent-emerald-500 cursor-pointer"
-                              />
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => toggleSelect(loan._id)}
+                                  className="w-3.5 h-3.5 accent-emerald-500 cursor-pointer"
+                                />
+                                {isDanger && <div title="Exceeded Base Period (Penalty Active)"><AlertCircle className="w-3 h-3 text-rose-500 animate-pulse shrink-0" /></div>}
+                              </div>
                             </td>
                           )}
                           <td className="px-4 py-3.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[10px] ring-1 ring-white/10 transition-all ${isSelected ? "bg-emerald-500/20 text-emerald-400 scale-110" : "bg-slate-800 text-emerald-400 group-hover:scale-110"}`}>
-                                {loan.userId?.name?.[0] || 'U'}
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-[10px] ring-1 ring-white/10 transition-all overflow-hidden relative ${isSelected ? "bg-emerald-500/20 text-emerald-400 scale-110" : "bg-slate-800 text-emerald-400 group-hover:scale-110"}`}>
+                                {loan.userId?.profileImage ? (
+                                  <Image 
+                                    src={loan.userId.profileImage} 
+                                    alt={loan.userId.name} 
+                                    fill 
+                                    sizes="32px"
+                                    className="object-cover" 
+                                  />
+                                ) : (
+                                  loan.userId?.name?.[0] || 'U'
+                                )}
                               </div>
                               <div>
                                 <p className="text-xs font-bold text-white group-hover:text-emerald-400 transition-colors">{loan.userId?.name}</p>
@@ -890,10 +894,29 @@ export default function LoansPage() {
                 </table>
 
                 {/* Pagination */}
-                <div className="px-8 py-4 bg-slate-950/20 border-t border-slate-800 flex justify-between items-center">
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
-                    Showing <span className="text-white">{loans.length}</span> of <span className="text-white">{pagination.total}</span> Entries
-                  </p>
+                <div className="px-8 py-4 bg-slate-950/20 border-t border-slate-800 flex flex-col sm:flex-row justify-between items-center gap-4">
+                  <div className="flex items-center gap-4">
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">
+                      Showing <span className="text-white">{loans.length}</span> of <span className="text-white">{pagination.total}</span> Entries
+                    </p>
+                    <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 rounded-xl border border-white/5">
+                      <span className="text-[9px] font-black text-slate-500 uppercase tracking-tighter">Show</span>
+                      <select
+                        value={itemsPerPage}
+                        onChange={(e) => {
+                          setItemsPerPage(Number(e.target.value));
+                          setCurrentPage(1); // Reset to first page when limit changes
+                        }}
+                        className="bg-transparent text-[10px] font-black text-emerald-400 outline-none cursor-pointer hover:text-emerald-300 transition-colors"
+                      >
+                        {[10, 20, 50, 100].map(val => (
+                          <option key={val} value={val} className="bg-slate-900 text-white">
+                            {val}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                   <div className="flex items-center gap-3">
                     <button
                       disabled={currentPage === 1}
@@ -972,8 +995,18 @@ export default function LoansPage() {
                           )}
                           <td className="px-5 py-3.5">
                             <div className="flex items-center gap-3">
-                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-[9px] ring-1 ring-white/5 ${isDeleted ? "bg-rose-900/30 text-rose-400" : "bg-emerald-900/30 text-emerald-400"}`}>
-                                {loan.userId?.name?.[0] || 'U'}
+                              <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-[9px] ring-1 ring-white/5 overflow-hidden relative ${isDeleted ? "bg-rose-900/30 text-rose-400" : "bg-emerald-900/30 text-emerald-400"}`}>
+                                {loan.userId?.profileImage ? (
+                                  <Image 
+                                    src={loan.userId.profileImage} 
+                                    alt={loan.userId.name} 
+                                    fill 
+                                    sizes="28px"
+                                    className="object-cover" 
+                                  />
+                                ) : (
+                                  loan.userId?.name?.[0] || 'U'
+                                )}
                               </div>
                               <div>
                                 <p className="text-[11px] font-bold text-slate-300">{loan.userId?.name}</p>
@@ -993,8 +1026,8 @@ export default function LoansPage() {
                           </td>
                           <td className="px-5 py-3.5 text-center">
                             <span className={`inline-flex items-center gap-1 text-[8px] font-black uppercase px-2 py-0.5 rounded-md border ${isDeleted
-                                ? "text-rose-400 bg-rose-500/10 border-rose-500/20"
-                                : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+                              ? "text-rose-400 bg-rose-500/10 border-rose-500/20"
+                              : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
                               }`}>
                               {isDeleted ? <Trash2 className="w-2 h-2" /> : <CheckCircle2 className="w-2 h-2" />}
                               {loan.status}
@@ -1411,7 +1444,77 @@ export default function LoansPage() {
                   className="flex-[1.5] py-5 bg-gradient-to-r from-amber-600 to-amber-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black uppercase tracking-[0.2em] rounded-[24px] transition-all text-[11px] flex items-center justify-center gap-3 shadow-[0_10px_30px_rgba(217,119,6,0.3)] active:scale-95 hover:brightness-110"
                 >
                   {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <RotateCcw className="w-4 h-4" />}
-                  Confirm Undo
+                  Confirm Reversal
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Activation Confirmation Modal */}
+      {activeModal === "activate" && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+          <div className="w-full max-w-lg bg-slate-950 border border-white/10 rounded-[32px] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-300 relative flex flex-col">
+            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent" />
+
+            <div className="px-8 pt-8 pb-6 flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center">
+                  <ShieldCheck className="w-6 h-6 text-emerald-500" />
+                </div>
+                <div>
+                  <h1 className="text-xl font-black text-white tracking-tight">Activate Loan</h1>
+                  <p className="text-[10px] text-emerald-500 font-bold uppercase tracking-widest mt-0.5">Verification & Disbursement</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all"
+              >
+                <X className="w-5 h-5 text-slate-400 hover:text-white" />
+              </button>
+            </div>
+
+            <div className="px-8 py-4 space-y-6">
+              <div className="p-5 bg-emerald-500/5 border border-emerald-500/10 rounded-2xl space-y-4">
+                <div className="flex items-center gap-4 justify-between bg-slate-950/50 p-4 rounded-xl border border-white/5 group cursor-pointer" 
+                     onClick={() => setRecordOutflow(!recordOutflow)}>
+                  <div className="space-y-1">
+                    <p className="text-[11px] font-black text-white uppercase tracking-widest">Record as Bank Outflow</p>
+                    <p className="text-[9px] text-slate-500 font-bold uppercase tracking-tighter">
+                      {recordOutflow ? "Money is leaving the organization now" : "Historic migration (No cash leaves today)"}
+                    </p>
+                  </div>
+                  <div className={`w-10 h-5 rounded-full transition-all relative ${recordOutflow ? 'bg-emerald-600' : 'bg-slate-800'}`}>
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-all ${recordOutflow ? 'left-6' : 'left-1'}`} />
+                  </div>
+                </div>
+
+                {!recordOutflow && (
+                  <div className="flex items-center gap-3 p-3 bg-blue-500/10 border border-blue-500/20 rounded-xl animate-in slide-in-from-top-2">
+                    <Info className="w-4 h-4 text-blue-400 shrink-0" />
+                    <p className="text-[9px] text-blue-300 font-bold uppercase leading-tight">
+                      Ledger Safety: This loan will be activated without adding a new disbursement record to the bank ledger.
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-4 pt-4 pb-8">
+                <button
+                  onClick={() => setActiveModal(null)}
+                  className="flex-1 py-4 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white font-black uppercase tracking-widest rounded-2xl transition-all text-[10px]"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleVerifyConfirm}
+                  disabled={deleteLoading}
+                  className="flex-[1.5] py-4 bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-widest rounded-2xl transition-all text-[10px] shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2"
+                >
+                  {deleteLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
+                  Finalize Activation
                 </button>
               </div>
             </div>
@@ -1424,7 +1527,7 @@ export default function LoansPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="w-full max-w-5xl bg-slate-950 border border-white/10 rounded-[32px] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-300 relative flex flex-col max-h-[92vh]">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-emerald-500/50 to-transparent" />
-            
+
             <div className="px-8 pt-8 pb-6 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-emerald-500/10 rounded-2xl border border-emerald-500/20 flex items-center justify-center relative group">
@@ -1436,7 +1539,7 @@ export default function LoansPage() {
                   <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-0.5">Chronological Audit Trail</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => { setActiveModal(null); setAuditData([]); }}
                 className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all group active:scale-95"
               >
@@ -1481,62 +1584,77 @@ export default function LoansPage() {
                       {auditData
                         .filter(d => recordTypes.includes("SERVICE_CHARGE") ? d.type === auditTab : true)
                         .map((record, i) => (
-                        <tr key={i} className="hover:bg-white/[0.02] transition-colors group">
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              {(() => {
-                                const bDate = adToBs(record.date);
-                                return (
-                                  <>
-                                    <span className="text-[11px] font-bold text-slate-300">
-                                      {bDate.day} {NEPALI_MONTHS[bDate.month - 1]} {bDate.year}
-                                    </span>
-                                    <span className="text-[9px] text-slate-600 uppercase tracking-tighter">
-                                      {new Date(record.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
-                                    </span>
-                                  </>
-                                );
-                              })()}
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex flex-col">
-                              <span className="text-xs font-black text-white tracking-tight uppercase">{record.userName}</span>
-                              <span className="text-[9px] text-slate-600 font-bold">#{record.accountNumber}</span>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 text-right">
-                            <span className="text-xs font-black text-emerald-400">Rs. {record.amount.toLocaleString()}</span>
-                          </td>
-                        </tr>
-                      ))}
+                          <tr key={i} className="hover:bg-white/[0.02] transition-colors group">
+                            <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                {(() => {
+                                  const bDate = adToBs(record.date);
+                                  return (
+                                    <>
+                                      <span className="text-[11px] font-bold text-slate-300">
+                                        {bDate.day} {NEPALI_MONTHS[bDate.month - 1]} {bDate.year}
+                                      </span>
+                                      <span className="text-[9px] text-slate-600 uppercase tracking-tighter">
+                                        {new Date(record.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                                      </span>
+                                    </>
+                                  );
+                                })()}
+                              </div>
+                            </td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center font-bold text-[10px] text-emerald-400 overflow-hidden relative shadow-inner">
+                                  {record.userImage ? (
+                                    <Image 
+                                      src={record.userImage} 
+                                      alt={record.userName} 
+                                      fill 
+                                      sizes="32px"
+                                      className="object-cover" 
+                                    />
+                                  ) : (
+                                    record.userName?.[0] || 'U'
+                                  )}
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black text-white tracking-tight uppercase">{record.userName}</span>
+                                  <span className="text-[9px] text-slate-600 font-bold">#{record.accountNumber}</span>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <span className="text-xs font-black text-emerald-400">Rs. {record.amount.toLocaleString()}</span>
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
               )}
             </div>
-            
+
             <div className="px-8 py-6 bg-slate-950/80 backdrop-blur-md border-t border-white/5 flex items-center justify-between shrink-0">
-               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">All records are verified and irreversible.</p>
-               <div className="text-right">
-                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-0.5">Current Scope Total</p>
-                  <p className="text-xl font-black text-white">
-                    Rs. {auditData
-                      .filter(d => recordTypes.includes("SERVICE_CHARGE") ? d.type === auditTab : true)
-                      .reduce((sum, r) => sum + r.amount, 0).toLocaleString()}
-                  </p>
-               </div>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">All records are verified and irreversible.</p>
+              <div className="text-right">
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-0.5">Current Scope Total</p>
+                <p className="text-xl font-black text-white">
+                  Rs. {auditData
+                    .filter(d => recordTypes.includes("SERVICE_CHARGE") ? d.type === auditTab : true)
+                    .reduce((sum, r) => sum + r.amount, 0).toLocaleString()}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       )}
-      
+
       {/* Advanced Payment Audit Modal */}
       {activeModal === "advanceAudit" && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="w-full max-w-6xl bg-slate-950 border border-white/10 rounded-[32px] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-300 relative flex flex-col max-h-[92vh]">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-blue-500/50 to-transparent" />
-            
+
             <div className="px-8 pt-8 pb-6 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-blue-500/10 rounded-2xl border border-blue-500/20 flex items-center justify-center relative group">
@@ -1548,12 +1666,29 @@ export default function LoansPage() {
                   <p className="text-[10px] text-blue-400 font-bold uppercase tracking-widest mt-0.5">Comprehensive Member Credit Audit</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setActiveModal(null)} 
-                className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all group active:scale-95"
-              >
-                <X className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors" />
-              </button>
+              <div className="flex items-center gap-4">
+                <div className="flex bg-white/5 p-1 rounded-xl border border-white/5">
+                  {[
+                    { id: "available", label: "Available Credit", icon: Wallet },
+                    { id: "cleared", label: "Cleared Credit", icon: FileClock }
+                  ].map((tab) => (
+                    <button
+                      key={tab.id}
+                      onClick={() => setAdvanceSubTab(tab.id as any)}
+                      className={`px-4 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${advanceSubTab === tab.id ? "bg-blue-600 text-white shadow-lg shadow-blue-600/20" : "text-slate-500 hover:text-white"}`}
+                    >
+                      <tab.icon className="w-3 h-3" />
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={() => setActiveModal(null)}
+                  className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all group active:scale-95"
+                >
+                  <X className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors" />
+                </button>
+              </div>
             </div>
 
             <div className="flex-1 overflow-y-auto px-8 py-4 custom-scrollbar">
@@ -1564,69 +1699,140 @@ export default function LoansPage() {
                     <p className="text-[10px] text-slate-500 font-black uppercase tracking-[0.2em] animate-pulse">Retrieving Ledger...</p>
                   </div>
                 </div>
-              ) : auditData.length === 0 ? (
-                <div className="h-64 flex flex-col items-center justify-center gap-4 bg-white/[0.02] rounded-3xl border border-dashed border-white/5">
-                  <Info className="w-10 h-10 text-slate-700" />
-                  <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">No advanced payments found in registry.</p>
-                </div>
-              ) : (
-                <div className="bg-white/[0.02] border border-white/5 rounded-[24px] overflow-hidden">
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="bg-white/[0.03]">
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Member</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Date (BS/AD)</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Amount</th>
-                        <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Source Reference</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5">
-                      {auditData.map((record, idx) => {
-                        const bDate = adToBs(new Date(record.date));
-                        return (
+              ) : advanceSubTab === "available" ? (
+                // AVAILABLE CREDIT VIEW (User Balances)
+                auditUserBalances.length === 0 ? (
+                  <div className="h-64 flex flex-col items-center justify-center gap-4 bg-white/[0.02] rounded-3xl border border-dashed border-white/5">
+                    <Info className="w-10 h-10 text-slate-700" />
+                    <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">No active credit balances found.</p>
+                  </div>
+                ) : (
+                  <div className="bg-white/[0.02] border border-white/5 rounded-[24px] overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-white/[0.03]">
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Member</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Account</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Current Available Balance</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {auditUserBalances.map((user, idx) => (
                           <tr key={idx} className="hover:bg-white/[0.02] transition-colors group">
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-[10px] text-blue-400">
-                                  {record.userName?.[0]}
+                                <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center font-bold text-[10px] text-emerald-400 overflow-hidden relative shadow-inner">
+                                  {user.profileImage ? (
+                                    <Image 
+                                      src={user.profileImage} 
+                                      alt={user.name} 
+                                      fill 
+                                      sizes="32px"
+                                      className="object-cover" 
+                                    />
+                                  ) : (
+                                    user.name?.[0] || 'U'
+                                  )}
                                 </div>
-                                <div className="flex flex-col">
-                                  <span className="text-xs font-bold text-white uppercase tracking-tight">{record.userName}</span>
-                                  <span className="text-[9px] text-slate-500 font-medium">#{record.accountNumber}</span>
-                                </div>
+                                <span className="text-xs font-bold text-white uppercase tracking-tight">{user.name}</span>
                               </div>
                             </td>
-                            <td className="px-6 py-5">
-                              <div className="flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-300">{bDate.day} {NEPALI_MONTHS[bDate.month-1]} {bDate.year}</span>
-                                <span className="text-[9px] text-slate-600 uppercase tracking-tighter">{new Date(record.date).toLocaleDateString()}</span>
-                              </div>
+                            <td className="px-6 py-5 text-right font-mono text-[10px] text-slate-500">
+                              #{user.accountNumber}
                             </td>
-                            <td className="px-6 py-5 text-right font-black text-blue-400 text-xs tabular-nums">
-                              Rs. {record.amount.toLocaleString()}
-                            </td>
-                            <td className="px-6 py-5 text-right">
-                               <span className="px-2.5 py-1 bg-white/5 border border-white/5 rounded-lg text-[9px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-300 transition-colors">
-                                 {record.source === "LOAN" ? "Settlement Overpayment" : "Regular Deposit"}
-                               </span>
+                            <td className="px-6 py-5 text-right font-black text-emerald-400 text-sm tabular-nums">
+                              Rs. {user.advanceBalance.toLocaleString()}
                             </td>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )
+              ) : (
+                // CLEARED CREDIT VIEW (History)
+                auditData.length === 0 ? (
+                  <div className="h-64 flex flex-col items-center justify-center gap-4 bg-white/[0.02] rounded-3xl border border-dashed border-white/5">
+                    <Info className="w-10 h-10 text-slate-700" />
+                    <p className="text-xs text-slate-600 font-bold uppercase tracking-widest">No transaction history found.</p>
+                  </div>
+                ) : (
+                  <div className="bg-white/[0.02] border border-white/5 rounded-[24px] overflow-hidden">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-white/[0.03]">
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Member</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest">Date (BS/AD)</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Credit Earned</th>
+                          <th className="px-6 py-4 text-[10px] font-black text-slate-500 uppercase tracking-widest text-right">Source Reference</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-white/5">
+                        {auditData.map((record, idx) => {
+                          const bDate = adToBs(new Date(record.date));
+                          return (
+                            <tr key={idx} className="hover:bg-white/[0.02] transition-colors group">
+                              <td className="px-6 py-5">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center font-bold text-[10px] text-blue-400 overflow-hidden relative shadow-inner">
+                                    {record.userImage ? (
+                                      <Image 
+                                        src={record.userImage} 
+                                        alt={record.userName} 
+                                        fill 
+                                        sizes="32px"
+                                        className="object-cover" 
+                                      />
+                                    ) : (
+                                      record.userName?.[0] || 'U'
+                                    )}
+                                  </div>
+                                  <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-white uppercase tracking-tight">{record.userName}</span>
+                                    <span className="text-[9px] text-slate-500 font-medium">#{record.accountNumber}</span>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-5">
+                                <div className="flex flex-col">
+                                  <span className="text-[11px] font-bold text-slate-300">{bDate.day} {NEPALI_MONTHS[bDate.month - 1]} {bDate.year}</span>
+                                  <span className="text-[9px] text-slate-600 uppercase tracking-tighter">{new Date(record.date).toLocaleDateString()}</span>
+                                </div>
+                              </td>
+                              <td className="px-6 py-5 text-right font-black text-blue-400 text-xs tabular-nums">
+                                Rs. {record.amount.toLocaleString()}
+                              </td>
+                              <td className="px-6 py-5 text-right">
+                                <span className="px-2.5 py-1 bg-white/5 border border-white/5 rounded-lg text-[9px] font-black text-slate-500 uppercase tracking-widest group-hover:text-slate-300 transition-colors">
+                                  {record.source === "LOAN" ? "Settlement Overpayment" : "Regular Deposit"}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )
               )}
             </div>
-            
+
             <div className="px-8 py-6 bg-slate-950/80 backdrop-blur-md border-t border-white/5 flex items-center justify-between shrink-0">
-               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">This pool represents credits held for future member obligations.</p>
-               <div className="text-right">
-                  <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-0.5">Total Member Credit Pool</p>
-                  <p className="text-xl font-black text-blue-400">
-                    Rs. {auditData.reduce((sum, r) => sum + r.amount, 0).toLocaleString()}
-                  </p>
-               </div>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">
+                {advanceSubTab === "available"
+                  ? "Real-time snapshot of currently held member credits."
+                  : "Chronological history of credits earned through settlements and deposits."}
+              </p>
+              <div className="text-right">
+                <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-0.5">
+                  {advanceSubTab === "available" ? "Total Available Pool" : "Historical Credits Recorded"}
+                </p>
+                <p className={`text-xl font-black ${advanceSubTab === "available" ? "text-emerald-400" : "text-blue-400"}`}>
+                  Rs. {(advanceSubTab === "available"
+                    ? auditUserBalances.reduce((sum, u) => sum + u.advanceBalance, 0)
+                    : auditData.reduce((sum, r) => sum + r.amount, 0)).toLocaleString()}
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -1637,7 +1843,7 @@ export default function LoansPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
           <div className="w-full max-w-6xl bg-slate-950 border border-white/10 rounded-[32px] shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-in fade-in zoom-in duration-300 relative flex flex-col max-h-[92vh]">
             <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-amber-500/50 to-transparent" />
-            
+
             <div className="px-8 pt-8 pb-6 flex items-center justify-between shrink-0">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 bg-amber-500/10 rounded-2xl border border-amber-500/20 flex items-center justify-center relative group">
@@ -1649,8 +1855,8 @@ export default function LoansPage() {
                   <p className="text-[10px] text-amber-400 font-bold uppercase tracking-widest mt-0.5">High-Priority Administrative Queue</p>
                 </div>
               </div>
-              <button 
-                onClick={() => setActiveModal(null)} 
+              <button
+                onClick={() => setActiveModal(null)}
                 className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl transition-all group active:scale-95"
               >
                 <X className="w-5 h-5 text-slate-400 group-hover:text-white transition-colors" />
@@ -1682,8 +1888,18 @@ export default function LoansPage() {
                           <tr key={loan._id} className="hover:bg-white/[0.02] transition-colors group">
                             <td className="px-6 py-5">
                               <div className="flex items-center gap-3">
-                                <div className="w-8 h-8 rounded-xl bg-slate-800 flex items-center justify-center font-bold text-[10px] text-amber-400">
-                                  {loan.userId?.name?.[0]}
+                                <div className="w-8 h-8 rounded-xl bg-slate-900 border border-white/5 flex items-center justify-center font-bold text-[10px] text-amber-400 overflow-hidden relative shadow-inner">
+                                  {loan.userId?.profileImage ? (
+                                    <Image 
+                                      src={loan.userId.profileImage} 
+                                      alt={loan.userId?.name} 
+                                      fill 
+                                      sizes="32px"
+                                      className="object-cover" 
+                                    />
+                                  ) : (
+                                    loan.userId?.name?.[0] || 'U'
+                                  )}
                                 </div>
                                 <div className="flex flex-col">
                                   <span className="text-xs font-bold text-white uppercase tracking-tight">{loan.userId?.name}</span>
@@ -1693,7 +1909,7 @@ export default function LoansPage() {
                             </td>
                             <td className="px-6 py-5">
                               <div className="flex flex-col">
-                                <span className="text-[11px] font-bold text-slate-300">{bDate.day} {NEPALI_MONTHS[bDate.month-1]} {bDate.year}</span>
+                                <span className="text-[11px] font-bold text-slate-300">{bDate.day} {NEPALI_MONTHS[bDate.month - 1]} {bDate.year}</span>
                                 <span className="text-[9px] text-slate-600 uppercase tracking-tighter">{new Date(loan.createdAt).toLocaleDateString()}</span>
                               </div>
                             </td>
@@ -1704,8 +1920,8 @@ export default function LoansPage() {
                               <div className="flex flex-col items-center gap-1">
                                 <span className="text-[9px] font-black text-slate-500 uppercase">{loan.approvedByIds.length} / 2</span>
                                 <div className="w-16 h-1 bg-slate-800 rounded-full overflow-hidden">
-                                  <div 
-                                    className="h-full bg-amber-500 transition-all duration-500" 
+                                  <div
+                                    className="h-full bg-amber-500 transition-all duration-500"
                                     style={{ width: `${(loan.approvedByIds.length / 2) * 100}%` }}
                                   />
                                 </div>
@@ -1714,7 +1930,7 @@ export default function LoansPage() {
                             <td className="px-6 py-5 text-right">
                               <div className="flex justify-end gap-2">
                                 {(user.isLoanApprover || isAdmin) && !loan.approvedByIds.includes(user.id) && (
-                                  <button 
+                                  <button
                                     onClick={() => handleApprove(loan._id)}
                                     className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-black uppercase rounded-lg transition-all shadow-lg shadow-blue-500/10 active:scale-95"
                                   >
@@ -1722,7 +1938,7 @@ export default function LoansPage() {
                                   </button>
                                 )}
                                 {isAdmin && (
-                                  <button 
+                                  <button
                                     onClick={() => handleVerify(loan._id)}
                                     className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[9px] font-black uppercase rounded-lg transition-all shadow-lg shadow-emerald-500/10 active:scale-95"
                                   >
@@ -1739,19 +1955,94 @@ export default function LoansPage() {
                 </div>
               )}
             </div>
-            
+
             <div className="px-8 py-6 bg-slate-950/80 backdrop-blur-md border-t border-white/5 flex items-center justify-between shrink-0">
-               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Approvals require multi-signature verification based on policy.</p>
-               <button 
-                  onClick={() => setActiveModal(null)}
-                  className="px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/5 text-slate-400 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
-               >
-                 Close Queue
-               </button>
+              <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Approvals require multi-signature verification based on policy.</p>
+              <button
+                onClick={() => setActiveModal(null)}
+                className="px-6 py-2.5 bg-white/5 hover:bg-white/10 border border-white/5 text-slate-400 hover:text-white text-[10px] font-black uppercase tracking-widest rounded-xl transition-all"
+              >
+                Close Queue
+              </button>
             </div>
           </div>
         </div>
       )}
+
+      {/* ── Contextual Action Bar (Floating) ────────────────────── */}
+      <AnimatePresence>
+        {isAdmin && selectedIds.size > 0 && !activeModal && !showApplyModal && (
+          <motion.div 
+            initial={{ y: 100, x: "-50%", opacity: 0 }}
+            animate={{ 
+              y: [0, -4, 0], // Floating bob animation
+              x: "-50%", 
+              opacity: 1 
+            }}
+            transition={{
+              y: {
+                repeat: Infinity,
+                duration: 4,
+                ease: "easeInOut"
+              },
+              opacity: { duration: 0.3 }
+            }}
+            exit={{ y: 100, x: "-50%", opacity: 0 }}
+            className="fixed bottom-10 left-1/2 z-[100] flex items-center gap-4 px-5 py-3 bg-slate-950/95 backdrop-blur-3xl border border-white/10 rounded-[28px] shadow-[0_30px_70px_rgba(0,0,0,0.8),0_0_20px_rgba(16,185,129,0.1)] ring-1 ring-white/10"
+          >
+            <div className="flex items-center gap-3 pr-4 border-r border-white/10">
+              <div className="relative">
+                <div className="w-10 h-10 bg-emerald-500/20 rounded-2xl flex items-center justify-center border border-emerald-500/30" />
+                <span className="absolute inset-0 flex items-center justify-center text-xs font-black text-emerald-400">
+                  {selectedIds.size}
+                </span>
+              </div>
+              <div className="flex flex-col">
+                <span className="text-[10px] text-white font-black uppercase tracking-widest leading-none">Selected</span>
+                <span className="text-[7px] text-slate-500 font-bold uppercase tracking-tight mt-1">Actions Ready</span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {!showHistory && selectedIds.size === 1 && singleSelectedLoan?.status === "ACTIVE" && (
+                <button
+                  onClick={() => setActiveModal("settle")}
+                  className="group relative flex items-center gap-2 px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase rounded-2xl transition-all shadow-[0_10px_25px_rgba(16,185,129,0.2)] active:scale-95 overflow-hidden"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  <span className="tracking-[0.1em]">Settle Loan</span>
+                </button>
+              )}
+
+              {selectedIds.size === 1 && (
+                <button
+                  onClick={() => setActiveModal("details")}
+                  className="group relative flex items-center gap-2 px-5 py-3 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-black uppercase rounded-2xl transition-all shadow-[0_10px_25px_rgba(37,99,235,0.15)] active:scale-95 overflow-hidden"
+                >
+                  <Eye className="w-4 h-4" />
+                  <span className="tracking-[0.1em]">Profile</span>
+                </button>
+              )}
+
+              <button
+                onClick={() => setActiveModal("delete")}
+                className="group relative flex items-center gap-2 px-5 py-3 bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-black uppercase rounded-2xl transition-all shadow-[0_10px_25px_rgba(225,29,72,0.15)] active:scale-95 overflow-hidden"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span className="tracking-[0.1em]">Delete</span>
+              </button>
+            </div>
+
+            <button
+              onClick={clearSelection}
+              className="ml-2 p-3 bg-white/5 hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 rounded-2xl transition-all group border border-transparent hover:border-rose-500/20"
+              title="Cancel Selection"
+            >
+              <X className="w-5 h-5 group-hover:rotate-90 transition-transform duration-300" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
