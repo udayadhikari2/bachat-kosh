@@ -25,13 +25,17 @@ import {
   generateDepositReport,
   generateLoanReport,
   generateMemberReport,
-  exportFinancialToExcel
+  exportFinancialToExcel,
+  exportDepositToExcel,
+  exportLoanToExcel
 } from "@/lib/utils/report-templates";
 import { getUsersByOrg } from "@/lib/actions/user";
 import { getAdminDepositStats, getDeposits } from "@/lib/actions/deposit";
 import { getFinancialHealth, getLoans } from "@/lib/actions/loan";
 import { getBankLedger } from "@/lib/actions/bank-ledger";
 import CompleteFinancialStatement from "@/components/dashboard/reports/CompleteFinancialStatement";
+import CompleteDepositReport from "@/components/dashboard/reports/CompleteDepositReport";
+import CompleteLoanReport from "@/components/dashboard/reports/CompleteLoanReport";
 
 export default function ReportsPage() {
   const { data: session } = useSession();
@@ -42,7 +46,8 @@ export default function ReportsPage() {
   const [ledgerData, setLedgerData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState<string | null>(null);
-  const [showStatementPreview, setShowStatementPreview] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewType, setPreviewType] = useState<"financial" | "deposit" | "loan" | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
 
   const current = getCurrentNepaliDate();
@@ -51,6 +56,14 @@ export default function ReportsPage() {
 
   const [financialMonth, setFinancialMonth] = useState(current.monthName);
   const [financialYear, setFinancialYear] = useState(current.year);
+
+  const [depositMonth, setDepositMonth] = useState(current.monthName);
+  const [depositYear, setDepositYear] = useState(current.year);
+
+  useEffect(() => {
+    setDepositMonth(targetMonth);
+    setDepositYear(targetYear);
+  }, [targetMonth, targetYear]);
 
   useEffect(() => {
     setFinancialMonth(targetMonth);
@@ -181,7 +194,8 @@ export default function ReportsPage() {
           usersCount: users.filter(u => u.role === 'USER').length || 1,
           generatedAt: new Date()
         });
-        setShowStatementPreview(true);
+        setPreviewType("financial");
+        setShowPreviewModal(true);
       }
     },
     {
@@ -191,17 +205,28 @@ export default function ReportsPage() {
       icon: PiggyBank,
       color: "text-blue-400",
       bg: "bg-blue-500/10",
-      action: async () => {
+      action: async (localMonth?: string, localYear?: number) => {
+        const m = localMonth || depositMonth;
+        const y = localYear || depositYear;
+
+        let currentStats = stats;
+        if (m !== targetMonth || y !== targetYear) {
+          const customData = await fetchFinancialDataForPeriod(m, y);
+          if (customData) {
+            currentStats = customData.stats;
+          }
+        }
+
         const res = await getDeposits({
           organizationId: orgId,
-          month: `${targetMonth} ${targetYear}`,
+          month: `${m} ${y}`,
           limit: 1000
         });
         if (res.success) {
-          generateDepositReport({
-            orgName,
-            month: targetMonth,
-            year: targetYear,
+          setPreviewData({
+            orgName: currentStats?.officialName || orgName,
+            month: m,
+            year: y,
             items: res.data.map((d: any) => ({
               memberName: d.userId.name,
               accountNumber: d.userId.accountNumber || "N/A",
@@ -211,8 +236,11 @@ export default function ReportsPage() {
               date: new Date(d.date).toLocaleDateString(),
               status: d.status
             })),
-            timestamp: new Date().toLocaleString()
+            timestamp: new Date().toLocaleString(),
+            bankDetails: currentStats?.bankDetails
           });
+          setPreviewType("deposit");
+          setShowPreviewModal(true);
         }
       }
     },
@@ -226,8 +254,8 @@ export default function ReportsPage() {
       action: async () => {
         const res = await getLoans({ organizationId: orgId, limit: 1000 });
         if (res.success) {
-          generateLoanReport({
-            orgName,
+          setPreviewData({
+            orgName: stats?.officialName || orgName,
             items: res.data.map((l: any) => ({
               memberName: l.userId.name,
               accountNumber: l.userId.accountNumber || "N/A",
@@ -239,8 +267,11 @@ export default function ReportsPage() {
               status: l.status,
               activatedAt: l.activatedAt ? new Date(l.activatedAt).toLocaleDateString() : "N/A"
             })),
-            timestamp: new Date().toLocaleString()
+            timestamp: new Date().toLocaleString(),
+            bankDetails: stats?.bankDetails
           });
+          setPreviewType("loan");
+          setShowPreviewModal(true);
         }
       }
     },
@@ -258,7 +289,7 @@ export default function ReportsPage() {
             name: u.name,
             accountNumber: u.accountNumber || "N/A",
             role: u.role,
-            totalDeposited: 0, // In real app, this would be cumulative deposits
+            totalDeposited: 0,
             advanceBalance: u.advanceBalance || 0,
             status: u.isActive ? 'ACTIVE' : 'INACTIVE'
           })),
@@ -403,6 +434,35 @@ export default function ReportsPage() {
                       </div>
                     )}
 
+                    {report.id === "deposit" && (
+                      <div className="flex items-center gap-2 mt-4 bg-white/5 p-1.5 rounded-xl border border-white/5 w-fit">
+                        <Calendar className="w-3.5 h-3.5 text-blue-400 ml-2 animate-pulse" />
+                        <select
+                          value={depositMonth}
+                          onChange={(e) => setDepositMonth(e.target.value)}
+                          className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer pr-2"
+                        >
+                          {NEPALI_MONTHS.map((m) => (
+                            <option key={m} value={m} className="bg-slate-900 text-white">
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="w-[1px] h-4 bg-white/10" />
+                        <select
+                          value={depositYear}
+                          onChange={(e) => setDepositYear(Number(e.target.value))}
+                          className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer pr-2"
+                        >
+                          {getNepaliYearRange(current.year - 5).map((y) => (
+                            <option key={y} value={y} className="bg-slate-900 text-white">
+                              {y}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-4 mt-6">
                       <span className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[9px] font-black rounded-lg uppercase tracking-widest border border-emerald-500/20">
                         <FileText className="w-3 h-3" /> Audit Ready
@@ -419,6 +479,8 @@ export default function ReportsPage() {
                       setGenerating(report.id);
                       if (report.id === 'financial') {
                         await (report as any).action(financialMonth, financialYear);
+                      } else if (report.id === 'deposit') {
+                        await (report as any).action(depositMonth, depositYear);
                       } else {
                         await report.action();
                       }
@@ -439,6 +501,8 @@ export default function ReportsPage() {
                       setGenerating(report.id);
                       if (report.id === 'financial') {
                         await (report as any).action(financialMonth, financialYear);
+                      } else if (report.id === 'deposit') {
+                        await (report as any).action(depositMonth, depositYear);
                       } else {
                         await report.action();
                       }
@@ -471,21 +535,33 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      {/* ── Financial Statement Preview Modal ────────────────────── */}
-      {showStatementPreview && previewData ? (
+      {/* ── Generalized Report Preview Modal ────────────────────── */}
+      {showPreviewModal && previewData && previewType ? (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300 print-modal-container">
           <div className="bg-slate-900 border border-white/10 w-full max-w-5xl max-h-[95vh] rounded-[32px] overflow-hidden flex flex-col shadow-[0_30px_100px_rgba(0,0,0,0.8)] print-modal-content">
             <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
               <div>
-                <h3 className="text-xl font-black text-white uppercase tracking-tight">Audit Preview</h3>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Complete Financial Statement • {previewData.targetMonth} {previewData.targetYear}</p>
+                <h3 className="text-xl font-black text-white uppercase tracking-tight">
+                  {previewType === "financial" && "Financial Statement Preview"}
+                  {previewType === "deposit" && "Deposit Report Preview"}
+                  {previewType === "loan" && "Loan Audit Preview"}
+                </h3>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">
+                  {previewType === "financial" && `Complete Financial Statement • ${previewData.targetMonth} ${previewData.targetYear}`}
+                  {previewType === "deposit" && `Monthly Deposit Report • ${previewData.month} ${previewData.year}`}
+                  {previewType === "loan" && `Loan Portfolio & Credit Audit`}
+                </p>
               </div>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => {
-                    const reportData = getFormattedReportData();
-                    if (reportData) {
-                      generateFinancialReport(reportData);
+                    if (previewType === "financial") {
+                      const reportData = getFormattedReportData();
+                      if (reportData) generateFinancialReport(reportData);
+                    } else if (previewType === "deposit") {
+                      generateDepositReport(previewData);
+                    } else if (previewType === "loan") {
+                      generateLoanReport(previewData);
                     }
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase rounded-xl transition-all border border-blue-500/20"
@@ -502,9 +578,13 @@ export default function ReportsPage() {
                 </button>
                 <button
                   onClick={() => {
-                    const reportData = getFormattedReportData();
-                    if (reportData) {
-                      exportFinancialToExcel(reportData);
+                    if (previewType === "financial") {
+                      const reportData = getFormattedReportData();
+                      if (reportData) exportFinancialToExcel(reportData);
+                    } else if (previewType === "deposit") {
+                      exportDepositToExcel(previewData);
+                    } else if (previewType === "loan") {
+                      exportLoanToExcel(previewData);
                     }
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-400 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all border border-emerald-500/20"
@@ -513,7 +593,10 @@ export default function ReportsPage() {
                   Excel (XLSX)
                 </button>
                 <button
-                  onClick={() => setShowStatementPreview(false)}
+                  onClick={() => {
+                    setShowPreviewModal(false);
+                    setPreviewType(null);
+                  }}
                   className="p-2.5 bg-white/5 hover:bg-rose-500/10 text-slate-500 hover:text-rose-500 rounded-xl transition-all"
                 >
                   <X className="w-5 h-5" />
@@ -522,13 +605,18 @@ export default function ReportsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-slate-950/50 print-modal-body">
-              <CompleteFinancialStatement data={previewData} />
+              {previewType === "financial" && <CompleteFinancialStatement data={previewData} />}
+              {previewType === "deposit" && <CompleteDepositReport data={previewData} />}
+              {previewType === "loan" && <CompleteLoanReport data={previewData} />}
             </div>
 
             <div className="px-8 py-4 bg-slate-950/80 backdrop-blur-md border-t border-white/5 flex items-center justify-between">
               <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest italic">Verify all figures against physical ledgers before official sign-off.</p>
               <button
-                onClick={() => setShowStatementPreview(false)}
+                onClick={() => {
+                  setShowPreviewModal(false);
+                  setPreviewType(null);
+                }}
                 className="px-6 py-2 bg-slate-800 hover:bg-slate-700 text-white text-[10px] font-black uppercase rounded-xl transition-all"
               >
                 Close Preview

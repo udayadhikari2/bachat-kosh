@@ -11,13 +11,16 @@ export async function register() {
   if (process.env.NEXT_RUNTIME === "nodejs") {
     try {
       // Force DNS to use reliable resolvers BEFORE any Mongoose connect call
-      const dns = await import("dns");
-      dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
-      if (typeof dns.setDefaultResultOrder === "function") {
-        dns.setDefaultResultOrder("ipv4first");
+      if (!process.env.VERCEL) {
+        const dns = await import("dns");
+        dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
+        if (typeof dns.setDefaultResultOrder === "function") {
+          dns.setDefaultResultOrder("ipv4first");
+        }
+        console.log("[INSTRUMENTATION] DNS bridge configured.");
+      } else {
+        console.log("[INSTRUMENTATION] Running on Vercel, skipping DNS bridge.");
       }
-
-      console.log("[INSTRUMENTATION] DNS bridge configured.");
 
       // Pre-warm the MongoDB connection
       const connectDB = (await import("@/lib/db")).default;

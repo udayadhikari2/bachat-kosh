@@ -48,6 +48,11 @@ export interface DepositReportData {
   year: number;
   items: DepositReportItem[];
   timestamp: string;
+  bankDetails?: {
+    accountNo: string;
+    accountName: string;
+    bankName: string;
+  };
 }
 
 export interface LoanReportItem {
@@ -66,6 +71,11 @@ export interface LoanReportData {
   orgName: string;
   items: LoanReportItem[];
   timestamp: string;
+  bankDetails?: {
+    accountNo: string;
+    accountName: string;
+    bankName: string;
+  };
 }
 
 export interface MemberReportItem {
@@ -464,7 +474,7 @@ export const generateFinancialReport = (data: FinancialReportData) => {
 
 export const generateDepositReport = (data: DepositReportData) => {
   const doc = new jsPDF();
-  const { orgName, month, year, items, timestamp } = data;
+  const { orgName, month, year, items, timestamp, bankDetails } = data;
 
   // Header
   doc.setFontSize(20);
@@ -483,7 +493,7 @@ export const generateDepositReport = (data: DepositReportData) => {
   const totalFine = items.filter(i => i.status === 'APPROVED').reduce((sum, i) => sum + (i.fine || 0), 0);
 
   autoTable(doc, {
-    startY: 45,
+    startY: 42,
     head: [['Total Verified Collection', 'Total Fines Collected', 'Total Transactions']],
     body: [[
       `Rs. ${totalApproved.toLocaleString('en-IN')}`,
@@ -506,7 +516,7 @@ export const generateDepositReport = (data: DepositReportData) => {
   ]);
 
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 10,
+    startY: (doc as any).lastAutoTable.finalY + 8,
     head: [['Member Name', 'A/C No.', 'Date', 'Type', 'Amount', 'Fine', 'Status']],
     body: tableRows,
     theme: 'striped',
@@ -517,6 +527,47 @@ export const generateDepositReport = (data: DepositReportData) => {
       5: { halign: 'right' },
     }
   });
+
+  const finalY = (doc as any).lastAutoTable.finalY + 12;
+  // Notes & Sign-offs
+  if (finalY > 250) {
+    doc.addPage();
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Audit Notes & Sign-Off', 14, 20);
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.', 14, 28);
+  } else {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Audit Notes & Sign-Off', 14, finalY);
+    
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.', 14, finalY + 8);
+  }
+
+  // Footer stamping
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    
+    // Left stamp
+    doc.text('Hamro Bachat Audit Engine', 14, 285);
+    
+    // Right stamp
+    const footerRightText = `Generated: ${timestamp} | Page ${i} of ${pageCount}`;
+    doc.text(footerRightText, 196, 285, { align: 'right' });
+  }
 
   doc.save(`${orgName}_Deposit_Report_${month}_${year}.pdf`);
 };
@@ -543,7 +594,7 @@ export const generateLoanReport = (data: LoanReportData) => {
   const activeCount = items.filter(i => i.status === 'ACTIVE').length;
 
   autoTable(doc, {
-    startY: 45,
+    startY: 42,
     head: [['Total Loan Disbursed', 'Current Principal Outstanding', 'Active Loan Accounts']],
     body: [[
       `Rs. ${totalPrincipal.toLocaleString('en-IN')}`,
@@ -568,7 +619,7 @@ export const generateLoanReport = (data: LoanReportData) => {
   ]);
 
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 10,
+    startY: (doc as any).lastAutoTable.finalY + 8,
     head: [['Member Name', 'A/C No.', 'Activated', 'Rate', 'Principal', 'Bal Principal', 'Accrued Int.', 'Total Paid', 'Status']],
     body: tableRows,
     theme: 'striped',
@@ -581,6 +632,47 @@ export const generateLoanReport = (data: LoanReportData) => {
       7: { halign: 'right' },
     }
   });
+
+  const finalY = (doc as any).lastAutoTable.finalY + 12;
+  // Notes & Sign-offs
+  if (finalY > 170) {
+    doc.addPage();
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Audit Notes & Sign-Off', 14, 20);
+    
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.', 14, 28);
+  } else {
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(15, 23, 42);
+    doc.text('Audit Notes & Sign-Off', 14, finalY);
+    
+    doc.setFontSize(8.5);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(71, 85, 105);
+    doc.text('This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.', 14, finalY + 8);
+  }
+
+  // Footer stamping (Landscape)
+  const pageCount = doc.getNumberOfPages();
+  for (let i = 1; i <= pageCount; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(148, 163, 184);
+    
+    // Left stamp
+    doc.text('Hamro Bachat Audit Engine', 14, 200);
+    
+    // Right stamp
+    const footerRightText = `Generated: ${timestamp} | Page ${i} of ${pageCount}`;
+    doc.text(footerRightText, 283, 200, { align: 'right' });
+  }
 
   doc.save(`${orgName}_Loan_Portfolio_Report.pdf`);
 };
@@ -711,5 +803,87 @@ export const exportFinancialToExcel = (data: FinancialReportData) => {
   XLSX.utils.book_append_sheet(wb, ws, "Financial Statement");
 
   const fileName = `Financial_Statement_${orgName.replace(/\s+/g, '_')}_${targetMonth}_${targetYear}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+};
+
+export const exportDepositToExcel = (data: DepositReportData) => {
+  const { orgName, month, year, items, timestamp } = data;
+  
+  const totalApproved = items.filter(i => i.status === 'APPROVED').reduce((sum, i) => sum + i.amount, 0);
+  const totalFine = items.filter(i => i.status === 'APPROVED').reduce((sum, i) => sum + (i.fine || 0), 0);
+
+  const rows = [
+    ["Monthly Deposit Audit Report - " + orgName],
+    ["Period", `${month} ${year}`],
+    ["Generated On", timestamp],
+    [],
+    ["SUMMARY STATISTICS"],
+    ["Total Verified Collection", totalApproved],
+    ["Total Fines Collected", totalFine],
+    ["Total Transactions", items.length],
+    [],
+    ["DETAILED TRANSACTIONS"],
+    ["Member Name", "Account Number", "Date", "Type", "Amount (NPR)", "Fine (NPR)", "Status"]
+  ];
+
+  items.forEach(item => {
+    rows.push([
+      item.memberName,
+      item.accountNumber,
+      item.date,
+      (item.type || 'SAVINGS').replace('_', ' '),
+      item.amount,
+      item.fine || 0,
+      item.status
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Monthly Deposits");
+
+  const fileName = `Deposit_Report_${orgName.replace(/\s+/g, '_')}_${month}_${year}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+};
+
+export const exportLoanToExcel = (data: LoanReportData) => {
+  const { orgName, items, timestamp } = data;
+
+  const totalPrincipal = items.reduce((sum, i) => sum + (i.principalAmount || 0), 0);
+  const totalOutstanding = items.reduce((sum, i) => sum + (i.principalOutstanding || 0), 0);
+  const activeCount = items.filter(i => i.status === 'ACTIVE').length;
+
+  const rows = [
+    ["Loan Portfolio & Credit Audit Report - " + orgName],
+    ["Generated On", timestamp],
+    [],
+    ["SUMMARY STATISTICS"],
+    ["Total Loan Disbursed", totalPrincipal],
+    ["Current Principal Outstanding", totalOutstanding],
+    ["Active Loan Accounts", activeCount],
+    [],
+    ["DETAILED LOAN PORTFOLIO"],
+    ["Member Name", "Account Number", "Activated Date", "Interest Rate", "Principal Disbursed", "Balance Principal Outstanding", "Accrued Interest", "Total Paid", "Status"]
+  ];
+
+  items.forEach(item => {
+    rows.push([
+      item.memberName,
+      item.accountNumber,
+      item.activatedAt || 'N/A',
+      `${item.interestRate}%`,
+      item.principalAmount || 0,
+      item.principalOutstanding || 0,
+      item.interestOutstanding || 0,
+      item.totalPaid || 0,
+      item.status
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Loan Portfolio");
+
+  const fileName = `Loan_Portfolio_Report_${orgName.replace(/\s+/g, '_')}.xlsx`;
   XLSX.writeFile(wb, fileName);
 };

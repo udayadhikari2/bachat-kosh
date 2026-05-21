@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import dns from "dns";
 
 // DNS Bridge — must run at module init time on the server
-if (typeof window === "undefined") {
+if (typeof window === "undefined" && !process.env.VERCEL) {
   try {
     // Point to reliable public DNS to resolve MongoDB SRV records
     dns.setServers(["8.8.8.8", "8.8.4.4", "1.1.1.1"]);
@@ -48,11 +48,17 @@ async function connectDB() {
       })
       .catch(async (err) => {
         console.error("[DB] First connection attempt failed:", err.message);
-        // Reset and try once more with fresh DNS settings
+        // Reset and try once more
         cached.promise = null;
-        // Re-apply DNS bridge in case it wasn't set yet
-        dns.setServers(["8.8.8.8", "8.8.4.4"]);
-        dns.setDefaultResultOrder?.("ipv4first");
+        if (!process.env.VERCEL) {
+          // Re-apply DNS bridge in case it wasn't set yet
+          try {
+            dns.setServers(["8.8.8.8", "8.8.4.4"]);
+            dns.setDefaultResultOrder?.("ipv4first");
+          } catch (dnsErr) {
+            console.warn("[DB_DNS_RETRY_WARN]:", dnsErr);
+          }
+        }
         // Retry
         return mongoose.connect(MONGODB_URI, opts).then((m) => {
           console.log("[DB] Retry connection established.");
