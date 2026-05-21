@@ -17,6 +17,7 @@ import {
   Globe
 } from "lucide-react";
 import { adToBs } from "@/lib/utils/nepali-date";
+import { getOfficialBankName } from "@/lib/utils/export-utils";
 
 interface CompleteFinancialStatementProps {
   data: {
@@ -138,7 +139,7 @@ const CompleteFinancialStatement: React.FC<CompleteFinancialStatementProps> = ({
               <Globe className="w-3 h-3 text-slate-400" />
               <p className="text-[8px] font-black text-slate-500 uppercase tracking-widest">Official Bank Channel</p>
             </div>
-            <p className="text-[10px] font-black text-slate-950 uppercase">{bankDetails?.bankName}</p>
+            <p className="text-[10px] font-black text-slate-950 uppercase">{getOfficialBankName(bankDetails?.bankName)}</p>
             <p className="text-[10px] font-bold text-slate-600">A/C: {bankDetails?.accountNo}</p>
             <p className="text-[8px] font-bold text-slate-400 uppercase">{bankDetails?.accountName}</p>
           </div>
@@ -392,6 +393,9 @@ const CompleteFinancialStatement: React.FC<CompleteFinancialStatementProps> = ({
           <p className="text-[10px] leading-relaxed font-medium">
             4. Net Asset Value (NAV) represents the total equity of the organization if all assets were liquidated and liabilities settled today.
           </p>
+          <p className="text-[10px] leading-relaxed font-bold text-slate-500 italic pt-2 border-t border-slate-200/50 mt-2">
+            This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.
+          </p>
         </div>
       </section>
 
@@ -409,24 +413,41 @@ const CompleteFinancialStatement: React.FC<CompleteFinancialStatementProps> = ({
           #financial-statement-report, #financial-statement-report * {
             visibility: visible !important;
           }
+          html, body, #__next, main, [role="dialog"], .print-modal-container, .print-modal-content, .print-modal-body {
+            height: auto !important;
+            min-height: 0 !important;
+            max-height: none !important;
+            overflow: visible !important;
+            position: static !important;
+            display: block !important;
+            width: auto !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
           #financial-statement-report {
-            position: absolute !important;
+            position: relative !important;
             left: 0 !important;
             top: 0 !important;
-            width: 210mm !important;
-            padding: 15mm !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            padding: 0 !important;
             margin: 0 !important;
             box-shadow: none !important;
             border: none !important;
             background: white !important;
             color: black !important;
+            display: block !important;
           }
           @page {
             size: A4;
-            margin: 0;
+            margin: 15mm 10mm 15mm 10mm;
           }
-          .shadow-2xl, .shadow-lg, .shadow-sm {
+          .shadow-2xl, .shadow-lg, .shadow-sm, .shadow-xl {
             box-shadow: none !important;
+          }
+          section, table, tr, tbody, .grid {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>

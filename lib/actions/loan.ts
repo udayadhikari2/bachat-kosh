@@ -12,6 +12,7 @@ import { calculateLoanStats } from "@/lib/utils/loan-calculations";
 import BankLedger from "@/lib/models/BankLedger";
 import Aggregation from "@/lib/models/Aggregation";
 import { parseNepaliMonth, bsToAd, getDaysInMonth, adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
+import { getBankLedger } from "@/lib/actions/bank-ledger";
 
 
 export async function getLoans(params: {
@@ -80,7 +81,7 @@ export async function getLoans(params: {
     // Calculate dynamic fields for portfolio view
     const detailedLoans = loans.map((loan: any) => {
       const stats = calculateLoanStats(loan);
-      const totalPaid = (loan.payments || []).reduce((sum: number, p: any) => p.type === "ADVANCE" ? sum : sum + p.amount, 0);
+      const totalPaid = (loan.payments || []).reduce((sum: number, p: any) => (p.type === "ADVANCE" || p.type === "ORGANIZATION") ? sum : sum + p.amount, 0);
       return {
         ...loan,
         _id: loan._id.toString(),
@@ -165,7 +166,7 @@ export async function getLoanHistory(params: {
 
     const detailedLoans = loans.map((loan: any) => {
       const stats = calculateLoanStats(loan, forceDate);
-      const totalPaid = (loan.payments || []).reduce((sum: number, p: any) => p.type === 'ADVANCE' ? sum : sum + p.amount, 0);
+      const totalPaid = (loan.payments || []).reduce((sum: number, p: any) => (p.type === 'ADVANCE' || p.type === 'ORGANIZATION') ? sum : sum + p.amount, 0);
       return {
         ...loan,
         _id: loan._id.toString(),
@@ -490,8 +491,8 @@ export async function settleLoan(params: {
       loan.dueDate = newDueDate;
     }
 
-    // Exclude ADVANCE entries from the debt-cleared tally — they are stored credits, not debt payments
-    const previousTotalPaid = (loan.payments || []).reduce((sum: number, p: any) => p.type === 'ADVANCE' ? sum : sum + p.amount, 0);
+    // Exclude ADVANCE and ORGANIZATION entries from the debt-cleared tally — they are stored credits or surplus, not debt payments
+    const previousTotalPaid = (loan.payments || []).reduce((sum: number, p: any) => (p.type === 'ADVANCE' || p.type === 'ORGANIZATION') ? sum : sum + p.amount, 0);
 
     // Process each allocation
     const ceilAllocations = params.allocations.map(alloc => ({
@@ -896,13 +897,34 @@ export async function getFinancialHealth(organizationId: string, month?: string,
     const org = await Organization.findById(organizationId);
     if (!org) throw new Error("Organization not found");
 
-    const initialFunds = (
-      (org.financials?.initialMonthlyCollection || 0) +
-      (org.financials?.initialNav || 0) +
-      (org.financials?.initialBankInterest || 0)
-    );
+    // Reconcile/fetch ledger to get actual real-time cash position (available balance)
+    let targetMonthStr = "";
+    if (month && year) {
+      targetMonthStr = `${month} ${year}`;
+    } else {
+      const bsDateNow = adToBs(calculationDate);
+      targetMonthStr = `${bsDateNow.monthName} ${bsDateNow.year}`;
+    }
 
-    const availableBalance = initialFunds - totalActivePrincipalOutstanding;
+    const ledgerRes = await getBankLedger(organizationId, targetMonthStr);
+    const ledgerClosingBalance = ledgerRes.success && ledgerRes.data ? ledgerRes.data.closingBalance : 0;
+
+    let availableBalance = 0;
+    let initialFunds = 0;
+
+    if (ledgerRes.success && ledgerRes.data) {
+      availableBalance = ledgerClosingBalance;
+      const totalWorkingCapital = availableBalance + totalActivePrincipalOutstanding;
+      initialFunds = Math.max(totalWorkingCapital, org.financials?.initialOpeningBalance || 0, 1);
+    } else {
+      const fallbackInitialFunds = (
+        (org.financials?.initialMonthlyCollection || 0) +
+        (org.financials?.initialNav || 0) +
+        (org.financials?.initialBankInterest || 0)
+      );
+      availableBalance = fallbackInitialFunds - totalActivePrincipalOutstanding;
+      initialFunds = Math.max(fallbackInitialFunds, 1);
+    }
 
     return {
       success: true,

@@ -474,7 +474,7 @@ export default function DepositsPage() {
           >
             <Filter className="w-3.5 h-3.5 text-emerald-400 group-hover:scale-110 transition-transform" />
             <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-white transition-colors">
-              {statusFilter === "all" ? "All Cache" : statusFilter}
+              {statusFilter === "all" ? "All Cache" : statusFilter === "NOT_DEPOSITED" ? "Not Deposited" : statusFilter}
             </span>
             <ChevronDown className={`w-3 h-3 text-slate-600 transition-transform ${showStatusDropdown ? 'rotate-180' : ''}`} />
           </button>
@@ -492,7 +492,8 @@ export default function DepositsPage() {
                     { id: "all", label: "All Cache" },
                     { id: "PENDING", label: "Pending" },
                     { id: "APPROVED", label: "Approved" },
-                    { id: "REJECTED", label: "Rejected" }
+                    { id: "REJECTED", label: "Rejected" },
+                    { id: "NOT_DEPOSITED", label: "Not Deposited" }
                   ].map(status => {
                     const isSelected = statusFilter === status.id;
                     return (
@@ -763,12 +764,16 @@ export default function DepositsPage() {
                   <tr key={dep._id} className="group hover:bg-slate-800/10 transition-all duration-300">
                     {isAdmin && (
                       <td className="px-8 py-6">
-                        <button
-                          onClick={() => toggleSelection(dep._id)}
-                          className={`transition-all ${selectedIds.has(dep._id) ? "text-emerald-400" : "text-slate-700 hover:text-slate-500"}`}
-                        >
-                          {selectedIds.has(dep._id) ? <CheckSquare className="w-5 h-5 shadow-lg shadow-emerald-500/20" /> : <Square className="w-5 h-5" />}
-                        </button>
+                        {!dep.isVirtual ? (
+                          <button
+                            onClick={() => toggleSelection(dep._id)}
+                            className={`transition-all ${selectedIds.has(dep._id) ? "text-emerald-400" : "text-slate-700 hover:text-slate-500"}`}
+                          >
+                            {selectedIds.has(dep._id) ? <CheckSquare className="w-5 h-5 shadow-lg shadow-emerald-500/20" /> : <Square className="w-5 h-5" />}
+                          </button>
+                        ) : (
+                          <div className="w-5 h-5" />
+                        )}
                       </td>
                     )}
 
@@ -843,6 +848,11 @@ export default function DepositsPage() {
                             <CheckCircle2 className="w-3 h-3 text-emerald-500" />
                             <span className="text-[8px] font-black text-emerald-500 uppercase tracking-widest">Verified</span>
                           </div>
+                        ) : dep.isVirtual ? (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full w-fit">
+                            <XCircle className="w-3 h-3 text-rose-500" />
+                            <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest">Not Deposited</span>
+                          </div>
                         ) : (
                           <div className="flex items-center gap-1.5 px-2.5 py-1 bg-rose-500/10 border border-rose-500/20 rounded-full w-fit">
                             <XCircle className="w-3 h-3 text-rose-500" />
@@ -853,7 +863,7 @@ export default function DepositsPage() {
                     </td>
                     <td className="px-8 py-6 text-right">
                       <div className="grid grid-cols-2 gap-2 opacity-0 group-hover:opacity-100 transition-all w-fit ml-auto">
-                        {isAdmin && (dep.status === "PENDING" || dep.status === "APPROVED") ? (
+                        {isAdmin && !dep.isVirtual && (dep.status === "PENDING" || dep.status === "APPROVED") ? (
                           <>
                             {dep.status === "PENDING" && (
                               <button
@@ -879,15 +889,17 @@ export default function DepositsPage() {
                           <div className="col-span-2 h-0" />
                         )}
 
-                        <button
-                          onClick={() => setPreviewDeposit(dep)}
-                          className="p-2.5 text-slate-500 hover:text-white bg-slate-950 rounded-xl transition-all border border-slate-800 hover:border-slate-600 active:scale-95 shadow-inner"
-                          title="View Proof"
-                        >
-                          <FileText className="w-4 h-4" />
-                        </button>
+                        {!dep.isVirtual && (
+                          <button
+                            onClick={() => setPreviewDeposit(dep)}
+                            className="p-2.5 text-slate-500 hover:text-white bg-slate-950 rounded-xl transition-all border border-slate-800 hover:border-slate-600 active:scale-95 shadow-inner"
+                            title="View Proof"
+                          >
+                            <FileText className="w-4 h-4" />
+                          </button>
+                        )}
 
-                        {isAdmin && (
+                        {isAdmin && !dep.isVirtual && (
                           <button
                             onClick={() => {
                               setEditingDeposit(dep);

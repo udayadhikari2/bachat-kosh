@@ -12,7 +12,9 @@ export function calculateLoanStats(loan: any, forceEndDate?: Date) {
   const scPaid = filteredPayments.filter((p: any) => p.type === "SERVICE_CHARGE").reduce((sum: number, p: any) => sum + p.amount, 0);
   const renewalPaidTotal = filteredPayments.filter((p: any) => p.type === "RENEWAL").reduce((sum: number, p: any) => sum + p.amount, 0);
   
-  const totalPaid = filteredPayments.reduce((sum: number, p: any) => sum + p.amount, 0);
+  const totalPaid = filteredPayments
+    .filter((p: any) => p.type !== "ADVANCE" && p.type !== "ORGANIZATION")
+    .reduce((sum: number, p: any) => sum + p.amount, 0);
 
   if (!loan.activatedAt || loan.status === "PENDING" || loan.status === "APPROVED") {
     const totalAmountToPay = loan.principalAmount + (loan.serviceChargeAmount || 0) + (loan.renewalAmount || 0);

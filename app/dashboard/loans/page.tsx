@@ -521,7 +521,7 @@ export default function LoansPage() {
                   <>
                     <ShieldCheck className="w-3 h-3 text-emerald-500" />
                     <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-tight">
-                      Liquidity managed by policy.
+                      Liquidity managed by developers.
                     </span>
                   </>
                 )}

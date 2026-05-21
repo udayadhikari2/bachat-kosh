@@ -70,3 +70,24 @@ export const formatUserDataForExport = (users: any[]) => {
     'Joined Date': new Date(user.createdAt).toLocaleDateString(),
   }));
 };
+
+/**
+ * Resolves short or abbreviated bank names to their full official names.
+ */
+export const getOfficialBankName = (bankName?: string): string => {
+  if (!bankName) return "";
+  const name = bankName.trim();
+  const upper = name.toUpperCase();
+  
+  if (
+    upper === "LAXMI BANK" ||
+    upper === "LAXMI SUNRISE" ||
+    upper === "LAXMI SUNRISE BANK" ||
+    upper === "LBL"
+  ) {
+    return "Laxmi Sunrise Bank Limited";
+  }
+  
+  return name;
+};
+

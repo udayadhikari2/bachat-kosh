@@ -49,8 +49,36 @@ export default function ReportsPage() {
   const [targetMonth, setTargetMonth] = useState(current.monthName);
   const [targetYear, setTargetYear] = useState(current.year);
 
+  const [financialMonth, setFinancialMonth] = useState(current.monthName);
+  const [financialYear, setFinancialYear] = useState(current.year);
+
+  useEffect(() => {
+    setFinancialMonth(targetMonth);
+    setFinancialYear(targetYear);
+  }, [targetMonth, targetYear]);
+
   const orgId = (session?.user as any)?.organizationId;
   const orgName = (session?.user as any)?.organizationName || "Organization";
+
+  const fetchFinancialDataForPeriod = async (month: string, year: number) => {
+    if (!orgId) return null;
+    const queryMonth = `${month} ${year}`;
+    try {
+      const [sResult, healthResult, ledgerResult] = await Promise.all([
+        getAdminDepositStats(orgId, queryMonth),
+        getFinancialHealth(orgId, month, year),
+        getBankLedger(orgId, queryMonth)
+      ]);
+      return {
+        stats: sResult.success ? sResult.data : null,
+        healthData: healthResult.success ? healthResult.data : null,
+        ledgerData: ledgerResult.success ? ledgerResult.data : null
+      };
+    } catch (error) {
+      console.error("[ERROR] fetchFinancialDataForPeriod:", error);
+      return null;
+    }
+  };
 
   async function fetchData() {
     if (!orgId) return;
@@ -124,16 +152,32 @@ export default function ReportsPage() {
       icon: ShieldCheck,
       color: "text-emerald-400",
       bg: "bg-emerald-500/10",
-      action: async () => {
+      action: async (localMonth?: string, localYear?: number) => {
+        const m = localMonth || targetMonth;
+        const y = localYear || targetYear;
+        
+        let currentStats = stats;
+        let currentLedger = ledgerData;
+        let currentHealth = healthData;
+        
+        if (m !== targetMonth || y !== targetYear) {
+          const customData = await fetchFinancialDataForPeriod(m, y);
+          if (customData) {
+            currentStats = customData.stats;
+            currentLedger = customData.ledgerData;
+            currentHealth = customData.healthData;
+          }
+        }
+
         setPreviewData({
-          orgName: stats.officialName || orgName,
-          bankDetails: stats.bankDetails,
-          targetMonth,
-          targetYear,
-          ledgerData,
-          stats,
+          orgName: currentStats?.officialName || orgName,
+          bankDetails: currentStats?.bankDetails,
+          targetMonth: m,
+          targetYear: y,
+          ledgerData: currentLedger,
+          stats: currentStats,
           lifetimeStats,
-          healthData,
+          healthData: currentHealth,
           usersCount: users.filter(u => u.role === 'USER').length || 1,
           generatedAt: new Date()
         });
@@ -224,6 +268,43 @@ export default function ReportsPage() {
     },
   ];
 
+  const getFormattedReportData = () => {
+    if (!previewData) return null;
+    return {
+      orgName: previewData.orgName,
+      bankDetails: previewData.bankDetails,
+      targetMonth: previewData.targetMonth,
+      targetYear: previewData.targetYear,
+      collection: revenueRows.map(row => ({ label: row.label, val: previewData.stats?.[row.key] || 0 })),
+      assetTracking: {
+        principalRepayment: previewData.stats?.totalLoanRepaid || 0,
+        advanceInflow: previewData.stats?.totalAdvancedPayment || 0,
+        advanceUsed: previewData.stats?.totalCreditUsed || 0,
+        principalLogs: previewData.stats?.principalRepaymentLogs,
+        advanceLogs: previewData.stats?.advanceInflowLogs
+      },
+      expenditure: [
+        { label: "Historical Bank Charges", val: previewData.stats?.upto?.bankCharges || 0 },
+        { label: "Historical Org Expenditure", val: previewData.stats?.upto?.totalExpenditure || 0 }
+      ],
+      nav: (previewData.stats?.upto?.grandTotalCollection || 0) + (previewData.healthData?.totalAccruedInterestActive || 0) + (previewData.healthData?.totalOutstandingFeesActive || 0)
+        - ((previewData.healthData?.totalAdvancePaidActive || 0) + (previewData.stats?.upto?.bankCharges || 0) + (previewData.stats?.upto?.totalExpenditure || 0)),
+      perMemberWealth: Math.ceil(((previewData.stats?.upto?.grandTotalCollection || 0) + (previewData.healthData?.totalAccruedInterestActive || 0) + (previewData.healthData?.totalOutstandingFeesActive || 0)
+        - ((previewData.healthData?.totalAdvancePaidActive || 0) + (previewData.stats?.upto?.bankCharges || 0) + (previewData.stats?.upto?.totalExpenditure || 0))) / (previewData.usersCount || 1)),
+      totalMembers: previewData.usersCount,
+      timestamp: previewData.generatedAt.toLocaleString(),
+      ledgerData: {
+        ...previewData.ledgerData,
+        totalExpenditure: previewData.stats?.totalExpenditure,
+        bankCharges: previewData.stats?.bankCharges
+      },
+      stats: previewData.stats,
+      lifetimeStats: previewData.lifetimeStats,
+      healthData: previewData.healthData,
+      usersCount: previewData.usersCount
+    };
+  };
+
   if (loading && !stats) {
     return (
       <div className="h-[80vh] flex flex-col items-center justify-center gap-4">
@@ -234,7 +315,7 @@ export default function ReportsPage() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-700">
+    <div className="space-y-8 animate-in fade-in duration-700 print:hidden">
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <PageHeader
           title="Audit & Reports"
@@ -263,28 +344,7 @@ export default function ReportsPage() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="p-6 bg-slate-900/40 border border-white/5 rounded-3xl backdrop-blur-sm group hover:border-emerald-500/30 transition-all">
-          <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-2">Total Org Equity</p>
-          <div className="text-xl font-black text-white mb-1">Rs. {(lifetimeStats?.grandTotalCollection || 0).toLocaleString('en-IN')}</div>
-          <div className="text-[10px] text-emerald-400 font-bold uppercase tracking-tight">Lifetime Deposits</div>
-        </div>
-        <div className="p-6 bg-slate-900/40 border border-white/5 rounded-3xl backdrop-blur-sm">
-          <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-2">Period Collection</p>
-          <div className="text-xl font-black text-white mb-1">Rs. {(stats?.grandTotalCollection || 0).toLocaleString('en-IN')}</div>
-          <div className="text-[10px] text-blue-400 font-bold uppercase tracking-tight">{targetMonth} Revenue</div>
-        </div>
-        <div className="p-6 bg-slate-900/40 border border-white/5 rounded-3xl backdrop-blur-sm">
-          <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-2">Loan Principal</p>
-          <div className="text-xl font-black text-white mb-1">Rs. {(healthData?.totalPrincipalOutstandingActive || 0).toLocaleString('en-IN')}</div>
-          <div className="text-[10px] text-amber-500 font-bold uppercase tracking-tight">Active Portfolio</div>
-        </div>
-        <div className="p-6 bg-slate-900/40 border border-white/5 rounded-3xl backdrop-blur-sm">
-          <p className="text-slate-500 text-[9px] font-black uppercase tracking-widest mb-2">Net Worth / Member</p>
-          <div className="text-xl font-black text-white mb-1">Rs. {Math.ceil(((lifetimeStats?.grandTotalCollection || 0) + (healthData?.totalAccruedInterestActive || 0) - (lifetimeStats?.totalExpenditure || 0)) / (users.filter(u => u.role === 'USER').length || 1)).toLocaleString('en-IN')}</div>
-          <div className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Verified NAV Per Head</div>
-        </div>
-      </div>
+
 
       <div className="bg-slate-900/40 border border-white/5 rounded-[40px] overflow-hidden backdrop-blur-sm shadow-2xl">
         <div className="px-10 py-8 border-b border-white/5 flex justify-between items-center bg-white/[0.02]">
@@ -313,6 +373,36 @@ export default function ReportsPage() {
                   <div>
                     <h4 className="text-xl font-black text-white tracking-tight">{report.title}</h4>
                     <p className="text-sm text-slate-500 mt-2 max-w-lg leading-relaxed">{report.description}</p>
+                    
+                    {report.id === "financial" && (
+                      <div className="flex items-center gap-2 mt-4 bg-white/5 p-1.5 rounded-xl border border-white/5 w-fit">
+                        <Calendar className="w-3.5 h-3.5 text-emerald-400 ml-2 animate-pulse" />
+                        <select
+                          value={financialMonth}
+                          onChange={(e) => setFinancialMonth(e.target.value)}
+                          className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer pr-2"
+                        >
+                          {NEPALI_MONTHS.map((m) => (
+                            <option key={m} value={m} className="bg-slate-900 text-white">
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                        <div className="w-[1px] h-4 bg-white/10" />
+                        <select
+                          value={financialYear}
+                          onChange={(e) => setFinancialYear(Number(e.target.value))}
+                          className="bg-transparent text-xs font-bold text-white focus:outline-none cursor-pointer pr-2"
+                        >
+                          {getNepaliYearRange(current.year - 5).map((y) => (
+                            <option key={y} value={y} className="bg-slate-900 text-white">
+                              {y}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
                     <div className="flex items-center gap-4 mt-6">
                       <span className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 text-emerald-400 text-[9px] font-black rounded-lg uppercase tracking-widest border border-emerald-500/20">
                         <FileText className="w-3 h-3" /> Audit Ready
@@ -327,7 +417,11 @@ export default function ReportsPage() {
                   <button
                     onClick={async () => {
                       setGenerating(report.id);
-                      await report.action();
+                      if (report.id === 'financial') {
+                        await (report as any).action(financialMonth, financialYear);
+                      } else {
+                        await report.action();
+                      }
                       setGenerating(null);
                     }}
                     disabled={!!generating}
@@ -343,7 +437,11 @@ export default function ReportsPage() {
                   <button
                     onClick={async () => {
                       setGenerating(report.id);
-                      await report.action();
+                      if (report.id === 'financial') {
+                        await (report as any).action(financialMonth, financialYear);
+                      } else {
+                        await report.action();
+                      }
                       setGenerating(null);
                     }}
                     className="p-4 bg-white/5 hover:bg-white/10 text-slate-400 hover:text-white border border-white/5 rounded-2xl transition-all"
@@ -375,52 +473,39 @@ export default function ReportsPage() {
 
       {/* ── Financial Statement Preview Modal ────────────────────── */}
       {showStatementPreview && previewData ? (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300">
-          <div className="bg-slate-900 border border-white/10 w-full max-w-5xl max-h-[95vh] rounded-[32px] overflow-hidden flex flex-col shadow-[0_30px_100px_rgba(0,0,0,0.8)]">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 sm:p-8 bg-slate-950/90 backdrop-blur-xl animate-in fade-in duration-300 print-modal-container">
+          <div className="bg-slate-900 border border-white/10 w-full max-w-5xl max-h-[95vh] rounded-[32px] overflow-hidden flex flex-col shadow-[0_30px_100px_rgba(0,0,0,0.8)] print-modal-content">
             <div className="px-8 py-6 border-b border-white/5 flex items-center justify-between bg-white/[0.02]">
               <div>
                 <h3 className="text-xl font-black text-white uppercase tracking-tight">Audit Preview</h3>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Complete Financial Statement • {targetMonth} {targetYear}</p>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mt-1">Complete Financial Statement • {previewData.targetMonth} {previewData.targetYear}</p>
               </div>
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    const reportData = getFormattedReportData();
+                    if (reportData) {
+                      generateFinancialReport(reportData);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-black uppercase rounded-xl transition-all border border-blue-500/20"
+                >
+                  <Download className="w-4 h-4" />
+                  Download PDF
+                </button>
                 <button
                   onClick={() => window.print()}
                   className="flex items-center gap-2 px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-[10px] font-black uppercase rounded-xl transition-all border border-white/5"
                 >
                   <Printer className="w-4 h-4" />
-                  Print Preview
+                  Print
                 </button>
                 <button
                   onClick={() => {
-                    exportFinancialToExcel({
-                      orgName: previewData.orgName,
-                      bankDetails: previewData.bankDetails,
-                      targetMonth: previewData.targetMonth,
-                      targetYear: previewData.targetYear,
-                      collection: revenueRows.map(row => ({ label: row.label, val: previewData.stats?.[row.key] || 0 })),
-                      assetTracking: {
-                        principalRepayment: previewData.stats?.totalLoanRepaid || 0,
-                        advanceInflow: previewData.stats?.totalAdvancedPayment || 0,
-                        advanceUsed: previewData.stats?.totalCreditUsed || 0,
-                        principalLogs: previewData.stats?.principalRepaymentLogs,
-                        advanceLogs: previewData.stats?.advanceInflowLogs
-                      },
-                      expenditure: [
-                        { label: "Historical Bank Charges", val: previewData.stats?.upto?.bankCharges || 0 },
-                        { label: "Historical Org Expenditure", val: previewData.stats?.upto?.totalExpenditure || 0 }
-                      ],
-                      nav: (previewData.stats?.upto?.grandTotalCollection || 0) + (previewData.healthData?.totalAccruedInterestActive || 0) + (previewData.healthData?.totalOutstandingFeesActive || 0)
-                        - ((previewData.healthData?.totalAdvancePaidActive || 0) + (previewData.stats?.upto?.bankCharges || 0) + (previewData.stats?.upto?.totalExpenditure || 0)),
-                      perMemberWealth: Math.ceil(((previewData.stats?.upto?.grandTotalCollection || 0) + (previewData.healthData?.totalAccruedInterestActive || 0) + (previewData.healthData?.totalOutstandingFeesActive || 0)
-                        - ((previewData.healthData?.totalAdvancePaidActive || 0) + (previewData.stats?.upto?.bankCharges || 0) + (previewData.stats?.upto?.totalExpenditure || 0))) / (previewData.usersCount || 1)),
-                      totalMembers: previewData.usersCount,
-                      timestamp: previewData.generatedAt.toLocaleString(),
-                      ledgerData: {
-                        ...previewData.ledgerData,
-                        totalExpenditure: previewData.stats?.totalExpenditure,
-                        bankCharges: previewData.stats?.bankCharges
-                      }
-                    });
+                    const reportData = getFormattedReportData();
+                    if (reportData) {
+                      exportFinancialToExcel(reportData);
+                    }
                   }}
                   className="flex items-center gap-2 px-4 py-2 bg-emerald-600/10 hover:bg-emerald-600 text-emerald-400 hover:text-white text-[10px] font-black uppercase rounded-xl transition-all border border-emerald-500/20"
                 >
@@ -436,7 +521,7 @@ export default function ReportsPage() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-slate-950/50">
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-8 bg-slate-950/50 print-modal-body">
               <CompleteFinancialStatement data={previewData} />
             </div>
 

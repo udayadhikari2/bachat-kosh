@@ -47,7 +47,9 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
       INTEREST: "Interest",
       PENALTY: "Penalty",
       RENEWAL: "Renewal Fee",
-      PRINCIPAL: "Principal Payment"
+      PRINCIPAL: "Principal Payment",
+      ADVANCE: "Advance Payment",
+      ORGANIZATION: "Organization Deduction"
     };
     return types[type] || type;
   };

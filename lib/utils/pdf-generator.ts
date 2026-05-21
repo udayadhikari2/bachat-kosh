@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
 import { adToBs, NEPALI_MONTHS } from "./nepali-date";
+import { getOfficialBankName } from "./export-utils";
 
 interface PDFData {
   loan: any;
@@ -52,7 +53,7 @@ export const generateLoanStatementPDF = (data: PDFData) => {
   
   doc.setFontSize(10);
   doc.setTextColor(100);
-  doc.text(`${organization.bankDetails?.bankName || ""} | Account: ${organization.bankDetails?.accountNo || ""}`, 105, 27, { align: "center" });
+  doc.text(`${getOfficialBankName(organization.bankDetails?.bankName) || ""} | Account: ${organization.bankDetails?.accountNo || ""}`, 105, 27, { align: "center" });
 
   doc.setDrawColor(200);
   doc.line(20, 35, 190, 35);

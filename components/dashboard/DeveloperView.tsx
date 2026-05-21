@@ -13,6 +13,7 @@ import {
 import CreateOrganizationForm from "./CreateOrganizationForm";
 import AddUserForm from "./AddUserForm";
 import { getOrganizations } from "@/lib/actions/organization";
+import { getOfficialBankName } from "@/lib/utils/export-utils";
 
 interface OrganizationData {
   _id: string;
@@ -109,7 +110,7 @@ export default function DeveloperView() {
                       <div className="text-xs text-slate-500">ID: {org._id.slice(-6)}</div>
                     </td>
                     <td className="py-4">
-                      <div className="text-sm text-slate-300">{org.bankDetails.bankName}</div>
+                      <div className="text-sm text-slate-300">{getOfficialBankName(org.bankDetails.bankName)}</div>
                       <div className="text-xs text-slate-500">{org.bankDetails.accountNo}</div>
                     </td>
                     <td className="py-4">

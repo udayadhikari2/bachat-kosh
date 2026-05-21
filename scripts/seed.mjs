@@ -65,7 +65,7 @@ async function seed() {
     const org = await Organization.create({
       name: "Sahabat Bachat Kosh",
       bankDetails: {
-        bankName: "Laxmi Bank",
+        bankName: "Laxmi Sunrise Bank Limited",
         accountNo: "11020015299",
         accountName: "Bibek Adhikari / Sajan Gurung",
       },

@@ -20,6 +20,9 @@ export interface ILoan extends Document {
   deletedAt?: Date;
   deletedById?: mongoose.Types.ObjectId;
   serviceChargeReversed: boolean;
+  interestPaid: number;
+  principalPaid: number;
+  penaltyPaid: number;
   serviceChargePaid: number;
   renewalPaid: number;
   advancePaid: number;
@@ -28,7 +31,7 @@ export interface ILoan extends Document {
   payments: {
     date: Date;
     amount: number;
-    type: "INTEREST" | "PRINCIPAL" | "PENALTY" | "RENEWAL" | "SERVICE_CHARGE" | "ADVANCE";
+    type: "INTEREST" | "PRINCIPAL" | "PENALTY" | "RENEWAL" | "SERVICE_CHARGE" | "ADVANCE" | "ORGANIZATION";
     proof?: string;
     verified: boolean;
   }[];
@@ -87,7 +90,7 @@ const LoanSchema: Schema = new Schema(
         amount: { type: Number, required: true },
         type: {
           type: String,
-          enum: ["INTEREST", "PRINCIPAL", "PENALTY", "RENEWAL", "SERVICE_CHARGE", "ADVANCE"],
+          enum: ["INTEREST", "PRINCIPAL", "PENALTY", "RENEWAL", "SERVICE_CHARGE", "ADVANCE", "ORGANIZATION"],
           required: true,
         },
         proof: { type: String },

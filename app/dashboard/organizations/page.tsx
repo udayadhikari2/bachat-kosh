@@ -18,6 +18,7 @@ import PageHeader from "@/components/dashboard/PageHeader";
 import { getOrganizations } from "@/lib/actions/organization";
 import CreateOrganizationForm from "@/components/dashboard/CreateOrganizationForm";
 import { toggleOrganizationStatus, deleteOrganization } from "@/lib/actions/organization";
+import { getOfficialBankName } from "@/lib/utils/export-utils";
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState([]);
@@ -174,7 +175,7 @@ export default function OrganizationsPage() {
                         <div className="text-[10px] text-slate-600 font-mono mt-1">{org._id}</div>
                       </td>
                       <td className="px-8 py-6">
-                        <div className="text-sm text-slate-200 font-bold">{org.bankDetails.bankName}</div>
+                        <div className="text-sm text-slate-200 font-bold">{getOfficialBankName(org.bankDetails.bankName)}</div>
                         <div className="text-xs text-slate-500 mt-0.5">{org.bankDetails.accountNo}</div>
                       </td>
                       <td className="px-8 py-6">

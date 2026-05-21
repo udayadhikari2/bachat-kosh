@@ -195,7 +195,8 @@ export async function reconcileMonthlyTotals(organizationId: string, month: stri
       {
         $match: {
           "payments.verified": true,
-          "payments.date": { $gte: startDate, $lte: endDate }
+          "payments.date": { $gte: startDate, $lte: endDate },
+          "payments.type": { $ne: "ORGANIZATION" }
         }
       },
       { $group: { _id: null, total: { $sum: "$payments.amount" } } }

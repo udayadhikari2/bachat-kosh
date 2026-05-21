@@ -11,7 +11,7 @@ import Organization from "@/lib/models/Organization";
 import AdminAudit from "@/lib/models/AdminAudit";
 import BankLedger from "@/lib/models/BankLedger";
 import Loan from "@/lib/models/Loan";
-import { parseNepaliMonth, getDaysInMonth, bsToAd, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
+import { parseNepaliMonth, getDaysInMonth, bsToAd, NEPALI_MONTHS, adToBs } from "@/lib/utils/nepali-date";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -31,6 +31,104 @@ export async function getDeposits(params: {
     await connectDB();
     noStore();
     const { organizationId, page = 1, limit = 10, search, fromDate, toDate, status, month, depositTypes } = params;
+
+    if (status === "NOT_DEPOSITED") {
+      // 1. Get all active general members
+      const userQuery: any = {
+        organizationId,
+        role: "USER",
+        isActive: true,
+      };
+
+      if (search) {
+        userQuery.name = { $regex: search, $options: "i" };
+      }
+
+      const activeUsers = await User.find(userQuery).select(
+        "name email profileImage nickname accountNumber phoneNumber committeeRole isActive role advanceBalance dateOfBirth gender address"
+      );
+
+      // 2. Parse target month, fallback if all/empty
+      let targetMonth = month;
+      if (!targetMonth || targetMonth === "all") {
+        const currentNepali = adToBs(new Date());
+        targetMonth = `${NEPALI_MONTHS[currentNepali.month - 1]} ${currentNepali.year}`;
+      }
+
+      // 3. Find monthly deposits that are APPROVED or PENDING
+      const depositedRecords = await Deposit.find({
+        organizationId,
+        depositType: "MONTHLY",
+        month: { $regex: targetMonth, $options: "i" },
+        status: { $in: ["APPROVED", "PENDING"] }
+      }).select("userId");
+
+      const depositedUserIds = new Set(depositedRecords.map(d => d.userId.toString()));
+
+      // 4. Filter users who have NOT deposited
+      const notDepositedUsers = activeUsers.filter(u => !depositedUserIds.has(u._id.toString()));
+
+      // 5. Get organization default monthly saving amount
+      const org = await Organization.findById(organizationId).select("config.monthlyDepositAmount");
+      const defaultAmount = org?.config?.monthlyDepositAmount || 1000;
+
+      // 6. Check for existing REJECTED records or generate virtual ones
+      const virtualDeposits = [];
+      for (const user of notDepositedUsers) {
+        const rejectedDeposit = await Deposit.findOne({
+          organizationId,
+          userId: user._id,
+          depositType: "MONTHLY",
+          month: { $regex: targetMonth, $options: "i" },
+          status: "REJECTED"
+        }).populate("userId", "name email profileImage nickname accountNumber phoneNumber committeeRole isActive role advanceBalance dateOfBirth gender address");
+
+        if (rejectedDeposit) {
+          virtualDeposits.push(rejectedDeposit);
+        } else {
+          virtualDeposits.push({
+            _id: `virtual-${user._id}-${targetMonth.replace(/\s+/g, "-")}`,
+            userId: user,
+            organizationId,
+            depositType: "MONTHLY",
+            amount: defaultAmount,
+            advancedPayment: 0,
+            creditUsed: 0,
+            month: targetMonth,
+            depositDate: new Date(),
+            proof: "",
+            status: "REJECTED",
+            fineApplied: 0,
+            remarks: "Not Deposited (Unpaid)",
+            isVirtual: true,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          });
+        }
+      }
+
+      // Sort alphabetically by user name
+      virtualDeposits.sort((a: any, b: any) => {
+        const nameA = a.userId?.name || "";
+        const nameB = b.userId?.name || "";
+        return nameA.localeCompare(nameB);
+      });
+
+      // 7. Paginate the virtual results
+      const total = virtualDeposits.length;
+      const skip = (page - 1) * limit;
+      const paginatedData = virtualDeposits.slice(skip, skip + limit);
+
+      return {
+        success: true,
+        data: JSON.parse(JSON.stringify(paginatedData)),
+        pagination: {
+          total,
+          pages: Math.ceil(total / limit),
+          currentPage: page
+        }
+      };
+    }
 
     const query: any = { organizationId };
 

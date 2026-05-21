@@ -84,7 +84,7 @@ export default function CreateOrganizationForm({ onClose, initialData }: CreateO
                   required
                   defaultValue={initialData?.bankDetails?.bankName}
                   className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-12 pr-4 py-3 text-white focus:ring-2 focus:ring-emerald-500/50 outline-none transition-all"
-                  placeholder="Laxmi Bank"
+                  placeholder="Laxmi Sunrise Bank Limited"
                 />
               </div>
             </div>
