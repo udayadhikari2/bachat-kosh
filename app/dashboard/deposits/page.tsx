@@ -111,6 +111,7 @@ export default function DepositsPage() {
 
   // Pagination
   const [page, setPage] = useState(1);
+  const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [totalRecords, setTotalRecords] = useState(0);
 
@@ -138,7 +139,7 @@ export default function DepositsPage() {
       getDeposits({
         organizationId: currentUser.organizationId,
         page,
-        limit: 10,
+        limit,
         search,
         fromDate: isDateRangeActive ? appliedFromDate || undefined : undefined,
         toDate: isDateRangeActive ? appliedToDate || undefined : undefined,
@@ -165,7 +166,7 @@ export default function DepositsPage() {
 
   useEffect(() => {
     fetchData();
-  }, [currentUser?.organizationId, page, statusFilter, isDateRangeActive, appliedFromDate, appliedToDate, filterMonth, filterYear]);
+  }, [currentUser?.organizationId, page, statusFilter, isDateRangeActive, appliedFromDate, appliedToDate, filterMonth, filterYear, limit]);
 
   // Debounced search
   useEffect(() => {
@@ -906,26 +907,42 @@ export default function DepositsPage() {
             </tbody>
           </table>
 
-          {/* Pagination Layer */}
-          <div className="px-8 py-5 border-t border-slate-800 bg-slate-950/20 flex flex-wrap items-center justify-between gap-4">
-            <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-              Ledger Entries: {totalRecords} Records
-            </p>
-            <div className="flex items-center gap-2">
+          {/* Pagination Footer */}
+          <div className="px-8 py-6 bg-slate-950/50 border-t border-slate-800 flex flex-wrap items-center justify-between gap-6">
+            <div className="flex items-center gap-8">
+              <div className="flex items-center gap-3">
+                <label className="text-[10px] font-black uppercase text-slate-600 tracking-widest">Page Size</label>
+                <select 
+                  value={limit} 
+                  onChange={(e) => { setLimit(Number(e.target.value)); setPage(1); }}
+                  className="bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-[10px] font-black text-slate-300 outline-none focus:ring-1 focus:ring-emerald-500/50 transition-all font-mono"
+                >
+                  {[5, 10, 20, 50, 100].map(v => <option key={v} value={v}>{v} ENTRIES</option>)}
+                </select>
+              </div>
+              <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+                 <PiggyBank className="w-3.5 h-3.5 opacity-30" />
+                 INDEX {totalRecords === 0 ? 0 : ((page - 1) * limit) + 1}-{Math.min(page * limit, totalRecords)} / {totalRecords} DATA_NODES
+              </p>
+            </div>
+
+            <div className="flex items-center gap-4">
               <button
                 disabled={page === 1}
                 onClick={() => setPage(p => p - 1)}
-                className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white disabled:opacity-20 transition-all"
+                className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-white disabled:opacity-20 transition-all active:scale-95 shadow-lg hover:border-slate-600"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
-              <div className="px-4 py-2 bg-slate-950 border border-slate-800 rounded-xl text-[10px] font-black text-white uppercase tracking-widest">
-                Page {page} of {totalPages || 1}
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl px-5 py-2.5 flex items-center gap-3 font-mono shadow-inner">
+                 <span className="text-sm font-black text-emerald-400">{page}</span>
+                 <span className="text-xs font-bold text-slate-700">OF</span>
+                 <span className="text-xs font-black text-slate-500">{totalPages || 1}</span>
               </div>
               <button
                 disabled={page === totalPages || totalPages === 0}
                 onClick={() => setPage(p => p + 1)}
-                className="p-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white disabled:opacity-20 transition-all"
+                className="p-3 bg-slate-900 border border-slate-800 rounded-2xl text-slate-400 hover:text-white disabled:opacity-20 transition-all active:scale-95 shadow-lg hover:border-slate-600"
               >
                 <ChevronRight className="w-5 h-5" />
               </button>

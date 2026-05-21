@@ -22,7 +22,7 @@ interface LoanSettleModalProps {
   defaultRenew?: boolean;
 }
 
-type PaymentType = "PRINCIPAL" | "INTEREST" | "PENALTY" | "RENEWAL" | "SERVICE_CHARGE" | "ADVANCE";
+type PaymentType = "PRINCIPAL" | "INTEREST" | "PENALTY" | "RENEWAL" | "SERVICE_CHARGE" | "ADVANCE" | "ORGANIZATION";
 
 const PRIORITY_ORDER: PaymentType[] = [
   "SERVICE_CHARGE",
@@ -36,13 +36,13 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
   const [displayAmount, setDisplayAmount] = useState<string>("");
   const [selectedTypes, setSelectedTypes] = useState<Set<PaymentType>>(new Set([]));
   const [allocations, setAllocations] = useState<Record<string, number>>({
-    PRINCIPAL: 0, INTEREST: 0, PENALTY: 0, RENEWAL: 0, SERVICE_CHARGE: 0
+    PRINCIPAL: 0, INTEREST: 0, PENALTY: 0, RENEWAL: 0, SERVICE_CHARGE: 0, ORGANIZATION: 0
   });
   const [effectiveDate, setEffectiveDate] = useState(new Date().toISOString().split('T')[0]);
   const [note, setNote] = useState("");
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [excessMode, setExcessMode] = useState<"PRINCIPAL" | "ADVANCE">("PRINCIPAL");
+  const [excessMode, setExcessMode] = useState<"PRINCIPAL" | "ADVANCE" | "ORGANIZATION">("PRINCIPAL");
   const [useAdvance, setUseAdvance] = useState<boolean>(false);
   const [advanceToConsume, setAdvanceToConsume] = useState<number>(0);
   const [showPrintOptions, setShowPrintOptions] = useState(false);
@@ -236,7 +236,7 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
 
     let remaining = evaluated;
     const nextAllocations: Record<string, number> = {
-      PRINCIPAL: 0, INTEREST: 0, PENALTY: 0, RENEWAL: 0, SERVICE_CHARGE: 0, ADVANCE: 0
+      PRINCIPAL: 0, INTEREST: 0, PENALTY: 0, RENEWAL: 0, SERVICE_CHARGE: 0, ADVANCE: 0, ORGANIZATION: 0
     };
 
     for (const type of PRIORITY_ORDER) {
@@ -258,10 +258,16 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
 
       if (surplus >= principalBalance) {
         nextAllocations.PRINCIPAL = principalBalance;
-        nextAllocations.ADVANCE = surplus - principalBalance;
+        if (excessMode === "ORGANIZATION") {
+           nextAllocations.ORGANIZATION = surplus - principalBalance;
+        } else {
+           nextAllocations.ADVANCE = surplus - principalBalance;
+        }
       } else {
         if (excessMode === "PRINCIPAL") {
           nextAllocations.PRINCIPAL = surplus;
+        } else if (excessMode === "ORGANIZATION") {
+          nextAllocations.ORGANIZATION = surplus;
         } else {
           nextAllocations.ADVANCE = surplus;
         }
@@ -794,6 +800,24 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                   </tr>
                 )}
                 
+                {allocations.ORGANIZATION > 0 && (
+                  <tr className="bg-purple-500/5 border-l-2 border-l-purple-500">
+                    <td className="px-5 py-3 text-center">
+                       <CheckCircle2 className="w-4 h-4 text-purple-500 mx-auto" />
+                    </td>
+                    <td className="px-5 py-3">
+                       <p className="text-[10px] font-black text-purple-400 uppercase tracking-tight">Misc. Organization Income</p>
+                       <p className="text-[8px] text-purple-500/60 font-bold uppercase tracking-widest">Added to Organization Collection</p>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                       <p className="text-[10px] font-bold text-slate-700">—</p>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                       <p className="text-xs font-black text-purple-400">Rs. {Math.ceil(allocations.ORGANIZATION).toLocaleString()}</p>
+                    </td>
+                  </tr>
+                )}
+                
                 <tr className="bg-emerald-500/5 border-t border-emerald-500/20">
                   <td colSpan={2} className="px-5 py-4">
                      <div className="flex flex-col">
@@ -836,29 +860,43 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
                     type="button"
                     onClick={() => setExcessMode("PRINCIPAL")}
                     disabled={grossSettleAmount > (extrasTotal + (shouldRenew ? parsedRenewalFee : 0) + getOutstandingForType("PRINCIPAL"))}
-                    className={`flex-1 p-4 rounded-2xl border transition-all text-left relative group ${excessMode === "PRINCIPAL" ? "bg-emerald-500/10 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "bg-white/5 border-white/5 opacity-60 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed"}`}
+                    className={`flex-1 p-3 rounded-2xl border transition-all text-left relative group ${excessMode === "PRINCIPAL" ? "bg-emerald-500/10 border-emerald-500/50 shadow-[0_0_20px_rgba(16,185,129,0.1)]" : "bg-white/5 border-white/5 opacity-60 hover:opacity-100 disabled:opacity-20 disabled:cursor-not-allowed"}`}
                   >
                      <div className="flex items-center justify-between">
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${excessMode === "PRINCIPAL" ? "text-white" : "text-slate-500"}`}>Reduce Principal</span>
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${excessMode === "PRINCIPAL" ? "bg-emerald-500 border-emerald-500" : "border-slate-700"}`}>
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${excessMode === "PRINCIPAL" ? "text-white" : "text-slate-500"}`}>Reduce Principal</span>
+                        <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${excessMode === "PRINCIPAL" ? "bg-emerald-500 border-emerald-500" : "border-slate-700"}`}>
                            {excessMode === "PRINCIPAL" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                         </div>
                      </div>
-                     <p className="text-[9px] text-slate-500 mt-1 leading-tight font-medium">Reduces core borrowed balance immediately.</p>
+                     <p className="text-[8px] text-slate-500 mt-1 leading-tight font-medium">Reduces core borrowed balance immediately.</p>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => setExcessMode("ADVANCE")}
-                    className={`flex-1 p-4 rounded-2xl border transition-all text-left relative group ${excessMode === "ADVANCE" ? "bg-blue-500/10 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]" : "bg-white/5 border-white/5 opacity-60 hover:opacity-100"}`}
+                    className={`flex-1 p-3 rounded-2xl border transition-all text-left relative group ${excessMode === "ADVANCE" ? "bg-blue-500/10 border-blue-500/50 shadow-[0_0_20px_rgba(59,130,246,0.1)]" : "bg-white/5 border-white/5 opacity-60 hover:opacity-100"}`}
                   >
                      <div className="flex items-center justify-between">
-                        <span className={`text-[10px] font-black uppercase tracking-widest ${excessMode === "ADVANCE" ? "text-white" : "text-slate-500"}`}>Advance Credit</span>
-                        <div className={`w-4 h-4 rounded-full border flex items-center justify-center ${excessMode === "ADVANCE" ? "bg-blue-500 border-blue-500" : "border-slate-700"}`}>
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${excessMode === "ADVANCE" ? "text-white" : "text-slate-500"}`}>Advance Credit</span>
+                        <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${excessMode === "ADVANCE" ? "bg-blue-500 border-blue-500" : "border-slate-700"}`}>
                            {excessMode === "ADVANCE" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                         </div>
                      </div>
-                     <p className="text-[9px] text-slate-500 mt-1 leading-tight font-medium">Keeps principal same. Funds available as credit for future dues.</p>
+                     <p className="text-[8px] text-slate-500 mt-1 leading-tight font-medium">Keeps principal same. Funds available as credit for future dues.</p>
+                  </button>
+                  
+                  <button
+                    type="button"
+                    onClick={() => setExcessMode("ORGANIZATION")}
+                    className={`flex-1 p-3 rounded-2xl border transition-all text-left relative group ${excessMode === "ORGANIZATION" ? "bg-purple-500/10 border-purple-500/50 shadow-[0_0_20px_rgba(168,85,247,0.1)]" : "bg-white/5 border-white/5 opacity-60 hover:opacity-100"}`}
+                  >
+                     <div className="flex items-center justify-between">
+                        <span className={`text-[9px] font-black uppercase tracking-widest ${excessMode === "ORGANIZATION" ? "text-white" : "text-slate-500"}`}>For Organization</span>
+                        <div className={`w-3 h-3 rounded-full border flex items-center justify-center ${excessMode === "ORGANIZATION" ? "bg-purple-500 border-purple-500" : "border-slate-700"}`}>
+                           {excessMode === "ORGANIZATION" && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                        </div>
+                     </div>
+                     <p className="text-[8px] text-slate-500 mt-1 leading-tight font-medium">Adds excess to organization's miscellaneous income pool.</p>
                   </button>
                </div>
             </div>

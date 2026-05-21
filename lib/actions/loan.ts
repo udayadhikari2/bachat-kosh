@@ -11,7 +11,7 @@ import { revalidatePath } from "next/cache";
 import { calculateLoanStats } from "@/lib/utils/loan-calculations";
 import BankLedger from "@/lib/models/BankLedger";
 import Aggregation from "@/lib/models/Aggregation";
-import { parseNepaliMonth, bsToAd, getDaysInMonth } from "@/lib/utils/nepali-date";
+import { parseNepaliMonth, bsToAd, getDaysInMonth, adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
 
 
 export async function getLoans(params: {
@@ -414,7 +414,7 @@ export async function settleLoan(params: {
   loanId: string;
   adminId: string;
   allocations: {
-    type: "INTEREST" | "PRINCIPAL" | "PENALTY" | "RENEWAL" | "SERVICE_CHARGE" | "ADVANCE";
+    type: "INTEREST" | "PRINCIPAL" | "PENALTY" | "RENEWAL" | "SERVICE_CHARGE" | "ADVANCE" | "ORGANIZATION";
     amount: number;
   }[];
   date?: string | Date;
@@ -538,17 +538,36 @@ export async function settleLoan(params: {
       });
     }
 
+    const orgSurplusAllocations = ceilAllocations.filter(a => a.type === "ORGANIZATION");
+    if (orgSurplusAllocations.length > 0) {
+      const bsDate = adToBs(paymentDate);
+      const targetMonth = `${NEPALI_MONTHS[bsDate.month - 1]} ${bsDate.year}`;
+      for (const alloc of orgSurplusAllocations) {
+        await Aggregation.create({
+           organizationId: loan.organizationId,
+           adminId: params.adminId,
+           type: "MISCELLANEOUS",
+           amount: alloc.amount,
+           month: targetMonth,
+           date: paymentDate,
+           remarks: `Surplus from Loan Settlement (Loan ID: ${loan._id.toString().slice(-6)})`
+        });
+      }
+    }
+
     // 1. Calculate Advance Dynamics
     const advanceEarned = ceilAllocations
       .filter(a => a.type === "ADVANCE")
+      .reduce((sum, a) => sum + a.amount, 0);
+    const orgEarned = ceilAllocations
+      .filter(a => a.type === "ORGANIZATION")
       .reduce((sum, a) => sum + a.amount, 0);
     const advanceUsed = params.useAdvance || 0;
     const netAdvanceChange = advanceEarned - advanceUsed;
 
     // 2. Recalculate full settlement status
-    // NOTE: ADVANCE allocations are stored as member credit — they do NOT count
-    // toward clearing the loan's own debt. Only debt-clearing types count.
-    const debtClearingAmount = totalTransactionAmount - advanceEarned;
+    // NOTE: ADVANCE and ORGANIZATION allocations are not debt-clearing.
+    const debtClearingAmount = totalTransactionAmount - advanceEarned - orgEarned;
     const finalTotalPaid = previousTotalPaid + debtClearingAmount;
 
     // For renewal cases, the loan is NEVER completed because it is being extended
@@ -643,6 +662,16 @@ export async function undoLastSettlement(params: {
     const advanceToRevert = toRevert
       .filter((p: any) => p.type === "ADVANCE")
       .reduce((sum: number, p: any) => sum + p.amount, 0);
+
+    const orgPaymentsToRevert = toRevert.filter((p: any) => p.type === "ORGANIZATION");
+    if (orgPaymentsToRevert.length > 0) {
+      await Aggregation.deleteMany({
+         organizationId: loan.organizationId,
+         date: latestDate,
+         type: "MISCELLANEOUS",
+         remarks: { $regex: loan._id.toString().slice(-6) }
+      });
+    }
 
     // 5. Save both (Atomic decrement for User balance)
     await Promise.all([
