@@ -1,51 +1,171 @@
 {
   "organization": {
     "name": "Sahabat Bachat Kosh",
-    "bankDetails": {
-      "bankName": "Laxmi Sunrise Bank Limited",
-      "accountNo": "11020015299",
-      "accountName": "Bibek Adhikari / Sajan Gurung"
-    },
-    "bankQr": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
-    "config": {
-      "monthlyDepositAmount": 1000,
-      "lateFee": 30,
-      "interestRate": 12,
-      "penaltyRate": 20,
-      "deadlineDay": 30
-    },
-    "isActive": true,
-    "_id": "6a0f52f255c261f7e3305a27",
-    "__v": 0
+    "_id": "6a0f52f255c261f7e3305a27"
   },
-  "users": [
+  "defaultPassword": "Bachat@123",
+  "members": [
     {
       "name": "Super Developer",
-      "email": "dev@example.com",
+      "email": "dev@bachat.com",
       "role": "DEVELOPER",
-      "password": "User@123",
-      "accountNumber": "N/A"
+      "accountNumber": "DEV-001"
     },
     {
       "name": "Organization Admin",
-      "email": "admin@example.com",
+      "email": "admin@bachat.com",
       "role": "ADMIN",
-      "password": "User@123",
-      "accountNumber": "N/A"
+      "accountNumber": "ADMIN-001"
     },
     {
-      "name": "Member One",
-      "email": "member1@example.com",
+      "name": "Bikash Adhikari",
+      "email": "bikash@temp.com",
       "role": "USER",
-      "password": "User@123",
-      "accountNumber": "KOSH-001"
+      "accountNumber": "800401"
     },
     {
-      "name": "Member Two",
-      "email": "member2@example.com",
+      "name": "Sahista Adhikari",
+      "email": "sahista@temp.com",
       "role": "USER",
-      "password": "User@123",
-      "accountNumber": "KOSH-002"
+      "accountNumber": "800402"
+    },
+    {
+      "name": "Samunnat Adhikari",
+      "email": "samunnat@temp.com",
+      "role": "USER",
+      "accountNumber": "800403"
+    },
+    {
+      "name": "Bijay Adhikari",
+      "email": "vijay@temp.com",
+      "role": "USER",
+      "accountNumber": "800404"
+    },
+    {
+      "name": "Sumana Dhakal",
+      "email": "sumana@temp.com",
+      "role": "USER",
+      "accountNumber": "800405"
+    },
+    {
+      "name": "Prinsuvi Adhikari",
+      "email": "prinsuvi@temp.com",
+      "role": "USER",
+      "accountNumber": "800406"
+    },
+    {
+      "name": "Bishal Adhikari",
+      "email": "bishal@temp.com",
+      "role": "USER",
+      "accountNumber": "800407"
+    },
+    {
+      "name": "Jyoti Kafle",
+      "email": "jyoti@temp.com",
+      "role": "USER",
+      "accountNumber": "800408"
+    },
+    {
+      "name": "Bishan Adhikari",
+      "email": "bishan@temp.com",
+      "role": "USER",
+      "accountNumber": "800409"
+    },
+    {
+      "name": "Sajan Gurung",
+      "email": "sajan@temp.com",
+      "role": "USER",
+      "accountNumber": "800410"
+    },
+    {
+      "name": "Hemkala Adhikari",
+      "email": "hemkala@temp.com",
+      "role": "USER",
+      "accountNumber": "800411"
+    },
+    {
+      "name": "Bibek Adhikari",
+      "email": "vivek@temp.com",
+      "role": "USER",
+      "accountNumber": "800412"
+    },
+    {
+      "name": "Supriya Paudel",
+      "email": "supriya@temp.com",
+      "role": "USER",
+      "accountNumber": "800413"
+    },
+    {
+      "name": "Binay Adhikari",
+      "email": "vinay@temp.com",
+      "role": "USER",
+      "accountNumber": "800414"
+    },
+    {
+      "name": "Bhawana Adhikari",
+      "email": "bhawana@temp.com",
+      "role": "USER",
+      "accountNumber": "800415"
+    },
+    {
+      "name": "Bijay Adhikari",
+      "email": "vijay_s@temp.com",
+      "role": "USER",
+      "accountNumber": "800416"
+    },
+    {
+      "name": "Apsana Paudel",
+      "email": "apsana@temp.com",
+      "role": "USER",
+      "accountNumber": "800417"
+    },
+    {
+      "name": "Sunil Adhikari",
+      "email": "sunil@temp.com",
+      "role": "USER",
+      "accountNumber": "800418"
+    },
+    {
+      "name": "Aarati Kafle",
+      "email": "aarati@temp.com",
+      "role": "USER",
+      "accountNumber": "800419"
+    },
+    {
+      "name": "Sheyans Adhikari",
+      "email": "sheyans@temp.com",
+      "role": "USER",
+      "accountNumber": "800420"
+    },
+    {
+      "name": "Uday Adhikari",
+      "email": "uday@temp.com",
+      "role": "USER",
+      "accountNumber": "800421"
+    },
+    {
+      "name": "Kripa Pandit",
+      "email": "kripa@temp.com",
+      "role": "USER",
+      "accountNumber": "800422"
+    },
+    {
+      "name": "Madan Paudel",
+      "email": "madan@temp.com",
+      "role": "USER",
+      "accountNumber": "800423"
+    },
+    {
+      "name": "Ganga Adhikari",
+      "email": "ganga@temp.com",
+      "role": "USER",
+      "accountNumber": "800424"
+    },
+    {
+      "name": "Magan Poudel",
+      "email": "madan_c@temp.com",
+      "role": "USER",
+      "accountNumber": "800425"
     }
   ]
 }
