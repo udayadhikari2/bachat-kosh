@@ -256,6 +256,9 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
                  <div className="bg-white/[0.02] border border-white/5 rounded-[24px] p-6 space-y-4">
                     <DetailRow label="Approved By" value={`${loan.approvedByIds?.length || 0} Board Members`} />
                     <DetailRow label="Verification ID" value={loan.verifiedById ? `USR-${loan.verifiedById.slice(-6)}` : "Pending"} />
+                    {loan.bankCharge > 0 && (
+                      <DetailRow label="Bank Charge (Expense)" value={`Rs. ${loan.bankCharge.toLocaleString()}`} />
+                    )}
                     <DetailRow label="Loan Intent" value={loan.reason} isDescription />
                  </div>
               </section>

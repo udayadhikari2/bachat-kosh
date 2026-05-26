@@ -210,9 +210,11 @@ export async function updateDeposit(id: string, data: any) {
       isModified: true
     });
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
     revalidatePath("/dashboard/deposits/aggregation");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard", "layout");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -317,8 +319,11 @@ export async function createDeposit(data: {
       isRead: false
     });
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
     return { success: true, data: JSON.parse(JSON.stringify(newDeposit)) };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -425,8 +430,11 @@ export async function createMultipleDeposits(payloads: Array<{
       }
     }
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
     return { success: true, count: successCount, errors };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -497,8 +505,11 @@ export async function processDeposits(
 
     await Notification.insertMany(notifications);
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -881,7 +892,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       totalDelayedFinePaid: (agg.totalDelayedFinePaid || 0) + (loanAgg.penalty || 0) + (mergeVault ? (financials.initialDelayedFine || 0) : 0),
       totalServiceChargePaid: (agg.totalServiceChargePaid || 0) + (loanAgg.service || 0) + (loanAgg.renewal || 0) + (mergeVault ? (financials.initialServiceCharge || 0) : 0),
       totalLoanInterestPaid: (agg.totalLoanInterestPaid || 0) + (loanAgg.interest || 0) + (mergeVault ? (financials.initialLoanInterest || 0) : 0),
-      totalAdvancedPayment: (agg.totalAdvancedPayment || 0) + (loanAgg.advance || 0) + (instAgg.totalAdvance || 0) + (mergeVault ? (financials.initialAdvancedPayment || 0) : 0),
+      totalAdvancedPayment: (agg.totalAdvancedPayment || 0) + (loanAgg.advance || 0) + (mergeVault ? (financials.initialAdvancedPayment || 0) : 0),
       totalCreditUsed: (agg.totalCreditUsed || 0),
       bankInterest: (bankAgg.totalBankInterest || 0) + (mergeVault ? (financials.initialBankInterest || 0) : 0),
       navCollection: (agg.totalNavCollection || 0) + (mergeVault ? (financials.initialNav || 0) : 0),
@@ -896,7 +907,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
         totalDelayedFinePaid: (uptoBaseAgg.totalDelayedFinePaid || 0) + (uptoLoanAgg.penalty || 0) + (financials.initialDelayedFine || 0),
         totalServiceChargePaid: (uptoBaseAgg.totalServiceChargePaid || 0) + (uptoLoanAgg.service || 0) + (uptoLoanAgg.renewal || 0) + (financials.initialServiceCharge || 0),
         totalLoanInterestPaid: (uptoBaseAgg.totalLoanInterestPaid || 0) + (uptoLoanAgg.interest || 0) + (financials.initialLoanInterest || 0),
-        totalAdvancedPayment: (uptoBaseAgg.totalAdvancedPayment || 0) + (uptoLoanAgg.advance || 0) + (uptoInstAgg.totalAdvance || 0) + (financials.initialAdvancedPayment || 0),
+        totalAdvancedPayment: (uptoBaseAgg.totalAdvancedPayment || 0) + (uptoLoanAgg.advance || 0) + (financials.initialAdvancedPayment || 0),
         bankInterest: (uptoBankAgg.totalBankInterest || 0) + (financials.initialBankInterest || 0),
         navCollection: (uptoBaseAgg.totalLegacyNav || 0) + (uptoInstAgg.totalNav || 0) + (financials.initialNav || 0),
         miscellaneous: (uptoBaseAgg.totalLegacyMisc || 0) + (uptoInstAgg.totalMisc || 0) + (financials.initialMiscellaneous || 0),
@@ -909,7 +920,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
           ((uptoBankAgg.totalBankInterest || 0) + (financials.initialBankInterest || 0)) +
           ((uptoBaseAgg.totalLegacyNav || 0) + (uptoInstAgg.totalNav || 0) + (financials.initialNav || 0)) +
           ((uptoBaseAgg.totalLegacyMisc || 0) + (uptoInstAgg.totalMisc || 0) + (financials.initialMiscellaneous || 0)) +
-          ((uptoBaseAgg.totalAdvancedPayment || 0) + (uptoLoanAgg.advance || 0) + (uptoInstAgg.totalAdvance || 0) + (financials.initialAdvancedPayment || 0))
+          ((uptoBaseAgg.totalAdvancedPayment || 0) + (uptoLoanAgg.advance || 0) + (financials.initialAdvancedPayment || 0))
         ) - (uptoBaseAgg.totalCreditUsed || 0),
         totalExpenditure: (uptoBankAgg.totalExpenditure || 0),
         bankCharges: (uptoBankAgg.totalBankCharges || 0),
@@ -920,7 +931,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
         totalDelayedFinePaid: (prevBaseAgg.totalDelayedFinePaid || 0) + (prevLoanAgg.penalty || 0) + (financials.initialDelayedFine || 0),
         totalServiceChargePaid: (prevBaseAgg.totalServiceChargePaid || 0) + (prevLoanAgg.service || 0) + (prevLoanAgg.renewal || 0) + (financials.initialServiceCharge || 0),
         totalLoanInterestPaid: (prevBaseAgg.totalLoanInterestPaid || 0) + (prevLoanAgg.interest || 0) + (financials.initialLoanInterest || 0),
-        totalAdvancedPayment: (prevBaseAgg.totalAdvancedPayment || 0) + (prevLoanAgg.advance || 0) + (prevInstAgg.totalAdvance || 0) + (financials.initialAdvancedPayment || 0),
+        totalAdvancedPayment: (prevBaseAgg.totalAdvancedPayment || 0) + (prevLoanAgg.advance || 0) + (financials.initialAdvancedPayment || 0),
         bankInterest: (prevBankAgg.totalBankInterest || 0) + (financials.initialBankInterest || 0),
         navCollection: (prevBaseAgg.totalLegacyNav || 0) + (prevInstAgg.totalNav || 0) + (financials.initialNav || 0),
         miscellaneous: (prevBaseAgg.totalLegacyMisc || 0) + (prevInstAgg.totalMisc || 0) + (financials.initialMiscellaneous || 0),
@@ -933,7 +944,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
           ((prevBankAgg.totalBankInterest || 0) + (financials.initialBankInterest || 0)) +
           ((prevBaseAgg.totalLegacyNav || 0) + (prevInstAgg.totalNav || 0) + (financials.initialNav || 0)) +
           ((prevBaseAgg.totalLegacyMisc || 0) + (prevInstAgg.totalMisc || 0) + (financials.initialMiscellaneous || 0)) +
-          ((prevBaseAgg.totalAdvancedPayment || 0) + (prevLoanAgg.advance || 0) + (prevInstAgg.totalAdvance || 0) + (financials.initialAdvancedPayment || 0))
+          ((prevBaseAgg.totalAdvancedPayment || 0) + (prevLoanAgg.advance || 0) + (financials.initialAdvancedPayment || 0))
         ) - (prevBaseAgg.totalCreditUsed || 0),
         totalExpenditure: (prevBankAgg.totalExpenditure || 0),
         bankCharges: (prevBankAgg.totalBankCharges || 0),
@@ -944,13 +955,14 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
     const advanceInflowLogs: any[] = [];
 
     (depAdvanceLogs as any[]).forEach(d => {
+      const isManualAgg = d.remarks?.startsWith("[AGGREGATION CREDIT]");
       advanceInflowLogs.push({
         memberName: d.userId?.name || "Unknown",
         accountNo: d.userId?.accountNumber || "N/A",
         date: d.depositDate,
         amount: d.advancedPayment,
-        source: d.depositType === "ADVANCE" ? "Direct Advance" : "Deposit Overpayment",
-        remarks: d.remarks
+        source: isManualAgg ? "Manual Aggregation" : (d.depositType === "ADVANCE" ? "Direct Advance" : "Deposit Overpayment"),
+        remarks: isManualAgg ? d.remarks.replace("[AGGREGATION CREDIT] ", "") : d.remarks
       });
     });
 
@@ -969,21 +981,10 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       });
     });
 
-    (aggAdvanceLogs as any[]).forEach(a => {
-      advanceInflowLogs.push({
-        memberName: a.memberId?.name || "Admin/System",
-        accountNo: a.memberId?.accountNumber || "N/A",
-        date: a.date,
-        amount: a.amount,
-        source: "Manual Aggregation",
-        remarks: a.remarks
-      });
-    });
-
     // 5. HISTORICAL OUTSTANDING BALANCES (Cumulative up to Target Month)
     // To show members who had credit during the audited month, we must reconstruct history.
     const historicalEndRef = endAd || new Date();
-    const [histDepBalances, histLoanBalances, histAggBalances] = await Promise.all([
+    const [histDepBalances, histLoanBalances] = await Promise.all([
       Deposit.aggregate([
         { $match: { organizationId: targetIdObj, depositDate: { $lte: historicalEndRef }, status: "APPROVED" } },
         { $group: { _id: "$userId", inflow: { $sum: "$advancedPayment" }, usage: { $sum: "$creditUsed" } } }
@@ -993,10 +994,6 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
         { $unwind: "$payments" },
         { $match: { "payments.date": { $lte: historicalEndRef }, "payments.type": "ADVANCE" } },
         { $group: { _id: "$userId", inflow: { $sum: "$payments.amount" } } }
-      ]),
-      Aggregation.aggregate([
-        { $match: { organizationId: targetIdObj, date: { $lte: historicalEndRef }, type: "ADVANCE" } },
-        { $group: { _id: "$memberId", inflow: { $sum: "$amount" } } }
       ])
     ]);
 
@@ -1020,7 +1017,6 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
 
     merge(histDepBalances, true);
     merge(histLoanBalances);
-    merge(histAggBalances);
 
     // Fetch user details for those with balance
     const activeMemberIds = Array.from(memberMap.entries())
@@ -1224,8 +1220,11 @@ export async function deleteDeposits(ids: string[]) {
     await Deposit.deleteMany({ _id: { $in: ids } });
     await Notification.deleteMany({ relatedId: { $in: ids } });
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -1241,8 +1240,23 @@ export async function deleteDeposit(depositId: string, orgId: string) {
 
     await connectDB();
 
-    // Only allow deleting NAV or MISCELLANEOUS through this channel if needed, 
-    // or allow general deletion if it's an admin action.
+    const dep = await Deposit.findOne({ _id: depositId, organizationId: orgId });
+    if (!dep) throw new Error("Deposit record not found or already purged");
+
+    // Reverse any advanceBalance changes if the deposit was approved
+    if (dep.status === "APPROVED") {
+      if (dep.advancedPayment && dep.advancedPayment > 0) {
+        await User.findByIdAndUpdate(dep.userId, {
+          $inc: { advanceBalance: -dep.advancedPayment }
+        });
+      }
+      if (dep.creditUsed && dep.creditUsed > 0) {
+        await User.findByIdAndUpdate(dep.userId, {
+          $inc: { advanceBalance: dep.creditUsed }
+        });
+      }
+    }
+
     const result = await Deposit.findOneAndDelete({
       _id: depositId,
       organizationId: orgId
@@ -1251,11 +1265,11 @@ export async function deleteDeposit(depositId: string, orgId: string) {
       await Notification.deleteMany({ relatedId: depositId });
     }
 
-    if (!result) throw new Error("Deposit record not found or already purged");
-
-    revalidatePath(`/dashboard/deposits`);
-    revalidatePath(`/dashboard/deposits/aggregation`);
-
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
     return { success: true };
   } catch (error: any) {
     console.error("[ERROR] deleteDeposit:", error);

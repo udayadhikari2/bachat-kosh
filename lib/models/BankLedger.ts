@@ -7,6 +7,7 @@ export interface IBankLedger extends Document {
   closingBalance: number;
   bankInterest: number; // Credit
   bankCharges: number; // Debit
+  manualBankCharges?: number; // Debit
   totalDeposits: number; // Credit
   totalLoanDisbursed: number; // Debit
   totalLoanRepaid: number; // Credit
@@ -23,6 +24,7 @@ const BankLedgerSchema: Schema = new Schema({
   closingBalance: { type: Number, default: 0 },
   bankInterest: { type: Number, default: 0 },
   bankCharges: { type: Number, default: 0 },
+  manualBankCharges: { type: Number },
   totalDeposits: { type: Number, default: 0 },
   totalLoanDisbursed: { type: Number, default: 0 },
   totalLoanRepaid: { type: Number, default: 0 },
@@ -32,5 +34,10 @@ const BankLedgerSchema: Schema = new Schema({
 
 // Ensure unique month per organization
 BankLedgerSchema.index({ organizationId: 1, month: 1 }, { unique: true });
+
+// Cache-buster to handle hot-reloading issues in development
+if (mongoose.models.BankLedger && !mongoose.models.BankLedger.schema.path('manualBankCharges')) {
+  delete mongoose.models.BankLedger;
+}
 
 export default mongoose.models.BankLedger || mongoose.model<IBankLedger>("BankLedger", BankLedgerSchema);

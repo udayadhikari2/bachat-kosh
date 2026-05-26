@@ -87,13 +87,36 @@ export async function updateBankLedger(id: string, data: {
     if (!ledger) throw new Error("Ledger not found");
 
     if (data.bankInterest !== undefined) ledger.bankInterest = data.bankInterest;
-    if (data.bankCharges !== undefined) ledger.bankCharges = data.bankCharges;
+    if (data.bankCharges !== undefined) ledger.manualBankCharges = data.bankCharges;
     if (data.totalExpenditure !== undefined) ledger.totalExpenditure = data.totalExpenditure;
     if (data.openingBalance !== undefined) ledger.openingBalance = data.openingBalance;
     if (data.remarks !== undefined) ledger.remarks = data.remarks;
 
+    // Query active loan bank charges for the target month
+    const target = parseNepaliMonth(ledger.month);
+    const daysInMonth = getDaysInMonth(target.year, target.month);
+    const startDate = bsToAd(target.year, target.month, 1);
+    const endDate = bsToAd(target.year, target.month, daysInMonth);
+    endDate.setHours(23, 59, 59, 999);
+
+    const loanBankCharges = await Loan.aggregate([
+      {
+        $match: {
+          organizationId: ledger.organizationId,
+          status: { $in: ["ACTIVE", "COMPLETED", "OVERDUE"] },
+          activatedAt: { $gte: startDate, $lte: endDate },
+          isOutflowRecorded: { $ne: false }
+        }
+      },
+      { $group: { _id: null, total: { $sum: "$bankCharge" } } }
+    ]);
+    const totalLoanBankCharges = loanBankCharges[0]?.total || 0;
+
+    const manualBankCharges = typeof ledger.manualBankCharges === "number" ? ledger.manualBankCharges : ledger.bankCharges;
+    ledger.manualBankCharges = manualBankCharges;
+    ledger.bankCharges = manualBankCharges + totalLoanBankCharges;
+
     // Recalculate closing balance
-    // Closing = Opening + (Deposits + Repayments + Interest) - (Disbursements + Charges + Expenditure)
     ledger.closingBalance =
       ledger.openingBalance +
       ledger.totalDeposits +
@@ -202,6 +225,20 @@ export async function reconcileMonthlyTotals(organizationId: string, month: stri
       { $group: { _id: null, total: { $sum: "$payments.amount" } } }
     ]);
 
+    // 4. Total Loan Bank Charges (from loans activated in this month)
+    const loanBankCharges = await Loan.aggregate([
+      {
+        $match: {
+          organizationId: orgIdObj,
+          status: { $in: ["ACTIVE", "COMPLETED", "OVERDUE"] },
+          activatedAt: { $gte: startDate, $lte: endDate },
+          isOutflowRecorded: { $ne: false }
+        }
+      },
+      { $group: { _id: null, total: { $sum: "$bankCharge" } } }
+    ]);
+    const totalLoanBankCharges = loanBankCharges[0]?.total || 0;
+
     const totalDeposits = (deposits[0]?.total || 0) + (instDeposits[0]?.total || 0);
     const totalLoanDisbursed = loansDisbursed[0]?.total || 0;
     const totalLoanRepaid = loansRepaid[0]?.total || 0;
@@ -224,6 +261,11 @@ export async function reconcileMonthlyTotals(organizationId: string, month: stri
     ledger.totalDeposits = totalDeposits;
     ledger.totalLoanDisbursed = totalLoanDisbursed;
     ledger.totalLoanRepaid = totalLoanRepaid;
+
+    // Recalculate bankCharges
+    const manualBankCharges = typeof ledger.manualBankCharges === "number" ? ledger.manualBankCharges : ledger.bankCharges;
+    ledger.manualBankCharges = manualBankCharges;
+    ledger.bankCharges = manualBankCharges + totalLoanBankCharges;
 
     // Recalculate closing balance
     ledger.closingBalance =

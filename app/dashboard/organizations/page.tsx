@@ -12,19 +12,22 @@ import {
   Eye, 
   Loader2,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  KeyRound
 } from "lucide-react";
 import PageHeader from "@/components/dashboard/PageHeader";
 import { getOrganizations } from "@/lib/actions/organization";
 import CreateOrganizationForm from "@/components/dashboard/CreateOrganizationForm";
 import { toggleOrganizationStatus, deleteOrganization } from "@/lib/actions/organization";
 import { getOfficialBankName } from "@/lib/utils/export-utils";
+import OrgAdminCredentialsModal from "@/components/dashboard/OrgAdminCredentialsModal";
 
 export default function OrganizationsPage() {
   const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingOrg, setEditingOrg] = useState<any>(null);
+  const [adminOrg, setAdminOrg] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
@@ -199,6 +202,17 @@ export default function OrganizationsPage() {
                       <td className="px-8 py-6 text-right">
                         <div className="flex items-center justify-end gap-2">
                           <button
+                            onClick={() => setAdminOrg(org)}
+                            className={`p-2 rounded-lg transition-all active:scale-95 ${
+                              org.adminId
+                                ? "text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                                : "text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+                            }`}
+                            title={org.adminId ? "Update Admin Credentials" : "Assign Admin"}
+                          >
+                            <KeyRound className="w-4 h-4" />
+                          </button>
+                          <button
                             onClick={() => {
                               setEditingOrg(org);
                               setShowModal(true);
@@ -292,6 +306,14 @@ export default function OrganizationsPage() {
             fetchOrgs();
           }} 
           initialData={editingOrg}
+        />
+      )}
+
+      {adminOrg && (
+        <OrgAdminCredentialsModal
+          org={adminOrg}
+          onClose={() => setAdminOrg(null)}
+          onSuccess={() => { setAdminOrg(null); fetchOrgs(); }}
         />
       )}
     </div>

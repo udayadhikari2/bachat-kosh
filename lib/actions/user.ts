@@ -259,6 +259,12 @@ export async function updateUserAdvanceBalance(targetUserId: string, newAmount: 
     // Add audit notification or trace if desired
     console.log(`[AUDIT] Admin ${adminId} updated advance balance for user ${targetUserId} to ${newAmount}`);
     
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
+    
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };

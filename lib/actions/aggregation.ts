@@ -9,6 +9,7 @@ import { authOptions } from "@/lib/auth-config";
 import mongoose from "mongoose";
 import User from "@/lib/models/User";
 import Deposit from "@/lib/models/Deposit";
+import { parseNepaliMonth, getDaysInMonth, bsToAd, getCurrentNepaliDate } from "@/lib/utils/nepali-date";
 
 export async function getAggregations(params: {
   organizationId: string;
@@ -58,8 +59,22 @@ export async function createAggregation(data: any) {
     }
 
     await connectDB();
+
+    const currentNepali = getCurrentNepaliDate();
+    const target = parseNepaliMonth(data.month);
+    let finalDate = data.date ? new Date(data.date) : new Date();
+
+    const isPastMonth = target.year < currentNepali.year || 
+                       (target.year === currentNepali.year && target.month < currentNepali.month);
+    if (isPastMonth) {
+      const lastDay = getDaysInMonth(target.year, target.month);
+      finalDate = bsToAd(target.year, target.month, lastDay);
+      finalDate.setHours(23, 59, 59, 999);
+    }
+
     const agg = await Aggregation.create({
       ...data,
+      date: finalDate,
       adminId: (session.user as any).id
     });
 
@@ -84,10 +99,11 @@ export async function createAggregation(data: any) {
         advancedPayment: data.amount,
         month: data.month,
         depositType: "ADVANCE",
-        depositDate: data.date || new Date(),
+        depositDate: finalDate,
         status: "APPROVED",
         remarks: `[AGGREGATION CREDIT] ${data.remarks || ""}`,
-        verifiedBy: (session.user as any).id
+        verifiedBy: (session.user as any).id,
+        aggregationId: agg._id
       });
     }
 
@@ -100,8 +116,11 @@ export async function createAggregation(data: any) {
       status: "SUCCESS"
     });
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
     revalidatePath("/dashboard/deposits/aggregation");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard", "layout");
     return { success: true, data: JSON.parse(JSON.stringify(agg)) };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -119,7 +138,130 @@ export async function updateAggregation(id: string, data: any) {
     const oldVal = await Aggregation.findById(id);
     if (!oldVal) throw new Error("Aggregation record not found");
 
-    const updated = await Aggregation.findByIdAndUpdate(id, data, { new: true });
+    const currentNepali = getCurrentNepaliDate();
+    const target = parseNepaliMonth(data.month);
+    let finalDate = data.date ? new Date(data.date) : new Date();
+
+    const isPastMonth = target.year < currentNepali.year || 
+                       (target.year === currentNepali.year && target.month < currentNepali.month);
+    if (isPastMonth) {
+      const lastDay = getDaysInMonth(target.year, target.month);
+      finalDate = bsToAd(target.year, target.month, lastDay);
+      finalDate.setHours(23, 59, 59, 999);
+    }
+
+    const updated = await Aggregation.findByIdAndUpdate(id, {
+      ...data,
+      date: finalDate
+    }, { new: true });
+    if (!updated) throw new Error("Failed to update aggregation record");
+
+    // Handle user advanceBalance and linked Deposit transitions
+    const oldIsAdvance = oldVal.type === "ADVANCE" && oldVal.memberId;
+    const newIsAdvance = updated.type === "ADVANCE" && updated.memberId;
+
+    if (!oldIsAdvance && newIsAdvance) {
+      // Transition: Not ADVANCE -> ADVANCE
+      // 1. Increment target member's advance balance
+      await User.findByIdAndUpdate(updated.memberId!, {
+        $inc: { advanceBalance: updated.amount }
+      });
+
+      // 2. Create linked Deposit record
+      await Deposit.create({
+        userId: updated.memberId!,
+        organizationId: updated.organizationId,
+        amount: 0,
+        advancedPayment: updated.amount,
+        month: updated.month,
+        depositType: "ADVANCE",
+        depositDate: updated.date,
+        status: "APPROVED",
+        remarks: `[AGGREGATION CREDIT] ${updated.remarks || ""}`,
+        verifiedBy: (session.user as any).id,
+        aggregationId: updated._id
+      });
+    } else if (oldIsAdvance && !newIsAdvance) {
+      // Transition: ADVANCE -> Not ADVANCE
+      // 1. Decrement old member's advance balance
+      await User.findByIdAndUpdate(oldVal.memberId!, {
+        $inc: { advanceBalance: -oldVal.amount }
+      });
+
+      // 2. Delete linked Deposit record (with legacy fallback)
+      let deletedDep = await Deposit.findOneAndDelete({ aggregationId: updated._id });
+      if (!deletedDep) {
+        await Deposit.findOneAndDelete({
+          userId: oldVal.memberId!,
+          organizationId: oldVal.organizationId,
+          advancedPayment: oldVal.amount,
+          depositType: "ADVANCE",
+          remarks: { $regex: `\\[AGGREGATION CREDIT\\].*${oldVal.remarks || ""}`, $options: 'i' }
+        });
+      }
+    } else if (oldIsAdvance && newIsAdvance) {
+      // Transition: ADVANCE -> ADVANCE
+      const memberChanged = oldVal.memberId!.toString() !== updated.memberId!.toString();
+
+      if (memberChanged) {
+        // Member changed: Revert old member's balance, increment new member's balance
+        await User.findByIdAndUpdate(oldVal.memberId!, {
+          $inc: { advanceBalance: -oldVal.amount }
+        });
+        await User.findByIdAndUpdate(updated.memberId!, {
+          $inc: { advanceBalance: updated.amount }
+        });
+      } else {
+        // Same member: Adjust balance by difference
+        const diff = updated.amount - oldVal.amount;
+        if (diff !== 0) {
+          await User.findByIdAndUpdate(updated.memberId!, {
+            $inc: { advanceBalance: diff }
+          });
+        }
+      }
+
+      // Update linked Deposit (with legacy fallback)
+      let deposit = await Deposit.findOne({ aggregationId: updated._id });
+      if (!deposit) {
+        // Legacy fallback
+        deposit = await Deposit.findOne({
+          userId: oldVal.memberId!,
+          organizationId: oldVal.organizationId,
+          depositType: "ADVANCE",
+          remarks: { $regex: `\\[AGGREGATION CREDIT\\].*`, $options: 'i' }
+        });
+      }
+
+      if (deposit) {
+        deposit.userId = updated.memberId!;
+        deposit.amount = 0;
+        deposit.advancedPayment = updated.amount;
+        deposit.month = updated.month;
+        deposit.depositType = "ADVANCE";
+        deposit.depositDate = updated.date;
+        deposit.status = "APPROVED";
+        deposit.remarks = `[AGGREGATION CREDIT] ${updated.remarks || ""}`;
+        deposit.verifiedBy = (session.user as any).id;
+        deposit.aggregationId = updated._id;
+        await deposit.save();
+      } else {
+        // Create if it didn't exist for some reason
+        await Deposit.create({
+          userId: updated.memberId!,
+          organizationId: updated.organizationId,
+          amount: 0,
+          advancedPayment: updated.amount,
+          month: updated.month,
+          depositType: "ADVANCE",
+          depositDate: updated.date,
+          status: "APPROVED",
+          remarks: `[AGGREGATION CREDIT] ${updated.remarks || ""}`,
+          verifiedBy: (session.user as any).id,
+          aggregationId: updated._id
+        });
+      }
+    }
 
     // Create Audit Log
     await AdminAudit.create({
@@ -131,8 +273,11 @@ export async function updateAggregation(id: string, data: any) {
       status: "SUCCESS"
     });
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
     revalidatePath("/dashboard/deposits/aggregation");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard", "layout");
     return { success: true, data: JSON.parse(JSON.stringify(updated)) };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -158,13 +303,17 @@ export async function deleteAggregation(id: string) {
         $inc: { advanceBalance: -oldVal.amount }
       });
       // Optionally delete the linked Deposit record
-      await Deposit.findOneAndDelete({
-        userId: oldVal.memberId,
-        organizationId: oldVal.organizationId,
-        advancedPayment: oldVal.amount,
-        depositType: "ADVANCE",
-        remarks: { $regex: `\\[AGGREGATION CREDIT\\].*${oldVal.remarks || ""}`, $options: 'i' }
-      });
+      let deletedDep = await Deposit.findOneAndDelete({ aggregationId: oldVal._id });
+      if (!deletedDep) {
+        // Legacy fallback
+        await Deposit.findOneAndDelete({
+          userId: oldVal.memberId,
+          organizationId: oldVal.organizationId,
+          advancedPayment: oldVal.amount,
+          depositType: "ADVANCE",
+          remarks: { $regex: `\\[AGGREGATION CREDIT\\].*${oldVal.remarks || ""}`, $options: 'i' }
+        });
+      }
     }
 
     // Create Audit Log
@@ -176,8 +325,11 @@ export async function deleteAggregation(id: string) {
       status: "SUCCESS"
     });
 
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
     revalidatePath("/dashboard/deposits/aggregation");
-    revalidatePath("/dashboard");
+    revalidatePath("/dashboard", "layout");
     return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };

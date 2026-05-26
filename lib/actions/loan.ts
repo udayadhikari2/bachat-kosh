@@ -222,6 +222,7 @@ export async function createLoanRequest(data: {
   activatedAt?: string;
   takeServiceCharge?: boolean;
   recordOutflow?: boolean;
+  bankCharge?: number;
 }) {
   try {
     await connectDB();
@@ -270,6 +271,7 @@ export async function createLoanRequest(data: {
       dueDate,
       approvedByIds,
       isOutflowRecorded: data.recordOutflow ?? true,
+      bankCharge: data.bankCharge !== undefined ? Math.ceil(Number(data.bankCharge)) : 0,
     });
 
     // Only notify approvers if the loan is actually pending
@@ -852,7 +854,7 @@ export async function getFinancialHealth(organizationId: string, month?: string,
     });
 
     // 2. Global Financial Aggregates
-    const [loanAgg, depositAgg, manualAgg] = await Promise.all([
+    const [loanAgg, depositAgg] = await Promise.all([
       Loan.aggregate([
         { $match: { organizationId: new mongoose.Types.ObjectId(organizationId), activatedAt: { $lte: calculationDate } } },
         { $unwind: "$payments" },
@@ -876,23 +878,16 @@ export async function getFinancialHealth(organizationId: string, month?: string,
             totalCreditUsed: { $sum: "$creditUsed" }
           }
         }
-      ]),
-      Aggregation.aggregate([
-        { $match: { organizationId: new mongoose.Types.ObjectId(organizationId), date: { $lte: calculationDate }, type: "ADVANCE" } },
-        {
-          $group: {
-            _id: null,
-            totalManualAdvance: { $sum: "$amount" }
-          }
-        }
       ])
     ]);
 
     const totalFeesPaidGlobal = loanAgg[0]?.totalFees || 0;
     const totalInterestPaidGlobal = (loanAgg[0]?.totalInterest || 0) + (loanAgg[0]?.totalPenalty || 0);
 
-    // Total Advance Pool = (Loan Advances + Deposit Advances + Manual Aggregation Advances) - (Deposit Credits Used)
-    const totalAdvancePool = (loanAgg[0]?.totalAdvances || 0) + (depositAgg[0]?.totalAdvancedPayment || 0) + (manualAgg[0]?.totalManualAdvance || 0) - (depositAgg[0]?.totalCreditUsed || 0);
+    // Total Advance Pool = (Loan Advances + Deposit Advances) - (Deposit Credits Used)
+    // Note: Manual Aggregation Advances are already recorded as Deposit records of type "ADVANCE"
+    // and thus are included in depositAgg[0].totalAdvancedPayment, so we exclude manualAgg to prevent double counting.
+    const totalAdvancePool = (loanAgg[0]?.totalAdvances || 0) + (depositAgg[0]?.totalAdvancedPayment || 0) - (depositAgg[0]?.totalCreditUsed || 0);
 
     const org = await Organization.findById(organizationId);
     if (!org) throw new Error("Organization not found");

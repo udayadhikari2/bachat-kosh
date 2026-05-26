@@ -35,6 +35,10 @@ export default function Sidebar({ role }: SidebarProps) {
   const { data: session } = useSession();
   const [pendingCount, setPendingCount] = useState(0);
 
+  const organizationName = (session?.user as any)?.organizationName as string | undefined;
+  // DEVELOPER sees system name "Bachat"; ADMIN/USER see their org name
+  const brandName = role === "DEVELOPER" ? "Bachat" : (organizationName || "Bachat");
+
   useEffect(() => {
     const fetchPending = async () => {
       const orgId = (session?.user as any)?.organizationId;
@@ -141,10 +145,10 @@ export default function Sidebar({ role }: SidebarProps) {
     <div className="flex flex-col w-64 h-screen bg-slate-900 text-white border-r border-slate-800">
       <div className="p-6">
         <h1 className="text-2xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
-          Hamro Bachat
+          {brandName}
         </h1>
         <p className="text-xs text-slate-400 mt-1 uppercase tracking-widest font-semibold">
-          {role} Portal
+          {role === "DEVELOPER" ? "System" : role} Portal
         </p>
       </div>
 

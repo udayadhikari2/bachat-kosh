@@ -15,7 +15,7 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "Hamro Bachat | Account Finance Management",
+  title: "Bachat | Account Finance Management",
   description: "Advanced role-based finance management system for mutual funds.",
 };
 

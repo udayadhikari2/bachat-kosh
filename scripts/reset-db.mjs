@@ -73,56 +73,29 @@ async function reset() {
   });
   console.log(`   ✅ ${org.name} (${org._id})`);
 
-  // ── Create 3 initial users ────────────────────────────────────────────────
+  // ── Create Developer only ────────────────────────────────────────────────
+  console.log("\n👤 Creating Developer account...");
   const password = await bcrypt.hash("Bachat@123", 10);
 
-  console.log("\n👥 Creating initial users...");
-  const users = await User.create([
-    {
-      name: "Super Developer",
-      nickname: "Dev",
-      email: "dev@bachat.com",
-      password,
-      role: "DEVELOPER",
-      accountNumber: "DEV-001",
-      isLoanApprover: false,
-      isActive: true,
-    },
-    {
-      name: "Organization Admin",
-      nickname: "Admin",
-      email: "admin@bachat.com",
-      password,
-      role: "ADMIN",
-      organizationId: org._id,
-      accountNumber: "ADMIN-001",
-      committeeRole: "Sachib",
-      isLoanApprover: true,
-      isActive: true,
-    },
-    {
-      name: "Member One",
-      nickname: "Member",
-      email: "member@bachat.com",
-      password,
-      role: "USER",
-      organizationId: org._id,
-      accountNumber: "800401",
-      isLoanApprover: false,
-      isActive: true,
-    },
-  ]);
-
-  users.forEach(u => {
-    console.log(`   ✅ ${u.role}: ${u.name} | ${u.email} | ${u.accountNumber}`);
+  await User.create({
+    name: "Super Developer",
+    nickname: "Dev",
+    email: "dev@bachat.com",
+    password,
+    role: "DEVELOPER",
+    accountNumber: "DEV-001",
+    isLoanApprover: false,
+    isActive: true,
   });
+
+  console.log("   ✅ DEVELOPER: Super Developer | dev@bachat.com");
 
   console.log("\n─────────────────────────────────────────");
   console.log("✅ DATABASE RESET COMPLETE");
-  console.log("   Password for all accounts: Bachat@123");
-  console.log("   dev@bachat.com     → DEVELOPER");
-  console.log("   admin@bachat.com   → ADMIN");
-  console.log("   member@bachat.com  → USER (account: 800401)");
+  console.log("   Developer: dev@bachat.com / Bachat@123");
+  console.log("   → Log in as Developer");
+  console.log("   → Create an organization");
+  console.log("   → Click 🔑 to assign admin credentials");
   console.log("─────────────────────────────────────────");
 
   await mongoose.disconnect();

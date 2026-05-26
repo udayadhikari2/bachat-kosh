@@ -33,6 +33,7 @@ export interface IOrganization extends Document {
     initialOpeningYear?: number;
     isFrameworkLocked?: boolean;
   };
+  adminId?: mongoose.Types.ObjectId;
   isActive: boolean;
   createdAt: Date;
   updatedAt: Date;
@@ -72,6 +73,7 @@ const OrganizationSchema: Schema = new Schema(
       initialOpeningYear: { type: Number, default: 0 },
       isFrameworkLocked: { type: Boolean, default: false },
     },
+    adminId: { type: Schema.Types.ObjectId, ref: "User" },
     isActive: { type: Boolean, default: true },
   },
   { timestamps: true }

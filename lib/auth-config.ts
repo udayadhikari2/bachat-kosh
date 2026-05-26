@@ -3,6 +3,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import connectDB from "@/lib/db";
 import User from "@/lib/models/User";
+import Organization from "@/lib/models/Organization";
 
 export const authOptions: NextAuthOptions = {
   session: {
@@ -51,12 +52,20 @@ export const authOptions: NextAuthOptions = {
           console.log("AUTH SUCCESSFUL");
           console.log("************************************\n");
 
+          // Fetch organization name for ADMIN/USER
+          let organizationName: string | undefined;
+          if (user.organizationId) {
+            const org = await Organization.findById(user.organizationId).lean() as { name?: string } | null;
+            organizationName = org?.name;
+          }
+
           return {
             id: user._id.toString(),
             email: user.email,
             name: user.name,
             role: user.role,
             organizationId: user.organizationId?.toString(),
+            organizationName,
           };
         } catch (error) {
           console.error("\n!!!!!!!! AUTH ERROR !!!!!!!!\n", error);
@@ -71,6 +80,7 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.role = (user as any).role;
         token.organizationId = (user as any).organizationId;
+        token.organizationName = (user as any).organizationName;
         token.id = user.id;
       }
       return token;
@@ -79,6 +89,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as any).role = token.role;
         (session.user as any).organizationId = token.organizationId;
+        (session.user as any).organizationName = token.organizationName;
         (session.user as any).id = token.id;
       }
       return session;

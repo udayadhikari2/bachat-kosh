@@ -1,5 +1,5 @@
 /**
- * Finance Engine for Hamro Bachat
+ * Finance Engine for Bachat
  * Handles interest and penalty calculations
  */
 

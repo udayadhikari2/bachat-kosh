@@ -213,7 +213,7 @@ const CompleteLoanReport: React.FC<CompleteLoanReportProps> = ({ data }) => {
 
       {/* Footer */}
       <div className="mt-12 pt-8 border-t border-slate-100 flex justify-between items-center opacity-50">
-        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">© Hamro Bachat Audit Engine v2.8</p>
+        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">© Bachat Audit Engine v2.8</p>
         <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Printed: {format(new Date(), "yyyy-MM-dd HH:mm")}</p>
       </div>
 

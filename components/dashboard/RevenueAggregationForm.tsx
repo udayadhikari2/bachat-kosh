@@ -74,9 +74,9 @@ export default function RevenueAggregationForm({ onClose, onSuccess, orgId, orgC
   useEffect(() => {
     if (initialData) {
       setDepositMonth(initialData.month);
-      setDepositType(initialData.depositType);
+      setDepositType(initialData.type || initialData.depositType);
       setAmount(initialData.amount.toString());
-      setPaymentDate(initialData.depositDate);
+      setPaymentDate(initialData.date || initialData.depositDate);
       setRemarks(initialData.remarks?.replace('[AGGREGATION] ', '')?.replace('[AGGREGATION CREDIT] ', '') || "");
       if (initialData.memberId) {
         setSelectedMemberId(initialData.memberId);

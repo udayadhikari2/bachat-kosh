@@ -74,6 +74,7 @@ export default function LoanRequestForm({
   const { register, handleSubmit, setValue, watch, formState: { errors } } = useForm({
     defaultValues: {
       principalAmount: 10000,
+      bankCharge: 10,
       reason: "",
       activatedAt: new Date().toISOString().split('T')[0],
     }
@@ -110,12 +111,12 @@ export default function LoanRequestForm({
         userId: targetUserId,
         organizationId,
         principalAmount: Math.ceil(Number(data.principalAmount)),
-
         reason: data.reason,
         adminRequesterId: isAdmin ? currentUserId : undefined,
         activatedAt: isHistorical ? data.activatedAt : undefined,
         takeServiceCharge: isHistorical ? takeServiceCharge : true,
         recordOutflow: isHistorical ? recordOutflow : true,
+        bankCharge: (!isHistorical || recordOutflow) ? Math.ceil(Number(data.bankCharge || 0)) : 0,
       });
 
       if (res.success) {
@@ -413,6 +414,32 @@ export default function LoanRequestForm({
               </p>
             )}
           </div>
+
+          {(!isHistorical || recordOutflow) && (
+            <div className="relative animate-in fade-in slide-in-from-top-2">
+              <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1 flex justify-between">
+                Bank Charge (Outflow Cost)
+                <span className="text-[9px] text-slate-600 font-black">ORGANIZATION EXPENSE</span>
+              </label>
+              <div className="relative group">
+                <span className="absolute left-6 top-1/2 -translate-y-1/2 text-2xl font-black text-slate-600 group-focus-within:text-emerald-500 transition-colors">Rs.</span>
+                <input
+                  {...register("bankCharge", { 
+                    required: "Bank charge is required", 
+                    min: { value: 0, message: "Minimum Rs. 0" } 
+                  })}
+                  type="number"
+                  className="w-full bg-slate-950/50 border border-slate-800 rounded-[24px] pl-16 pr-6 py-5 text-2xl font-black text-white placeholder:text-slate-800 focus:border-emerald-500/50 transition-all outline-none"
+                  placeholder="10"
+                />
+              </div>
+              {errors.bankCharge && (
+                <p className="text-rose-500 text-[11px] font-bold mt-3 px-2 flex items-center gap-2">
+                  <AlertCircle className="w-3.5 h-3.5" /> {errors.bankCharge.message as string}
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <label className="block text-[11px] font-black text-slate-400 uppercase tracking-widest mb-3 px-1 flex justify-between">

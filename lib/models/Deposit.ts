@@ -15,6 +15,7 @@ export interface IDeposit extends Document {
   verifiedBy?: mongoose.Types.ObjectId;
   rejectionReason?: string;
   remarks?: string;
+  aggregationId?: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -47,6 +48,7 @@ const DepositSchema: Schema = new Schema(
     verifiedBy: { type: Schema.Types.ObjectId, ref: "User" },
     rejectionReason: { type: String },
     remarks: { type: String },
+    aggregationId: { type: Schema.Types.ObjectId, ref: "Aggregation" },
   },
   { timestamps: true }
 );

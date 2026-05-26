@@ -87,7 +87,7 @@ export default async function Home() {
 
       <footer className="absolute bottom-8 text-slate-500 text-sm font-medium flex items-center">
         <Lock className="w-4 h-4 mr-2" />
-        Secured by Hamro Bachat Enterprise
+        Secured by Bachat Enterprise
       </footer>
     </main>
   );

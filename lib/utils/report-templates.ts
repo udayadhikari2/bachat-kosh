@@ -465,7 +465,7 @@ export const generateFinancialReport = (data: FinancialReportData) => {
     doc.setPage(i);
     doc.setFontSize(8);
     doc.setTextColor(150);
-    doc.text('Hamro Bachat Audit Engine', 14, 287);
+    doc.text('Bachat Audit Engine', 14, 287);
     doc.text(`Generated: ${timestamp}   |   Page ${i} of ${pageCount}`, 196, 287, { align: 'right' });
   }
 
@@ -562,7 +562,7 @@ export const generateDepositReport = (data: DepositReportData) => {
     doc.setTextColor(148, 163, 184);
     
     // Left stamp
-    doc.text('Hamro Bachat Audit Engine', 14, 285);
+    doc.text('Bachat Audit Engine', 14, 285);
     
     // Right stamp
     const footerRightText = `Generated: ${timestamp} | Page ${i} of ${pageCount}`;
@@ -667,7 +667,7 @@ export const generateLoanReport = (data: LoanReportData) => {
     doc.setTextColor(148, 163, 184);
     
     // Left stamp
-    doc.text('Hamro Bachat Audit Engine', 14, 200);
+    doc.text('Bachat Audit Engine', 14, 200);
     
     // Right stamp
     const footerRightText = `Generated: ${timestamp} | Page ${i} of ${pageCount}`;

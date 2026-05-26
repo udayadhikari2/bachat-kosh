@@ -35,7 +35,7 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
 
   const [formData, setFormData] = useState({
     bankInterest: initialLedger.bankInterest || 0,
-    bankCharges: initialLedger.bankCharges || 0,
+    bankCharges: initialLedger.manualBankCharges !== undefined ? initialLedger.manualBankCharges : (initialLedger.bankCharges || 0),
     totalExpenditure: initialLedger.totalExpenditure || 0,
     remarks: initialLedger.remarks || ""
   });
@@ -58,7 +58,7 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
       if (monthStr === initialLedger.month) {
         setFormData({
           bankInterest: initialLedger.bankInterest || 0,
-          bankCharges: initialLedger.bankCharges || 0,
+          bankCharges: initialLedger.manualBankCharges !== undefined ? initialLedger.manualBankCharges : (initialLedger.bankCharges || 0),
           totalExpenditure: initialLedger.totalExpenditure || 0,
           remarks: initialLedger.remarks || ""
         });
@@ -72,7 +72,7 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
         setCurrentLedger(res.data);
         setFormData({
           bankInterest: res.data.bankInterest || 0,
-          bankCharges: res.data.bankCharges || 0,
+          bankCharges: res.data.manualBankCharges !== undefined ? res.data.manualBankCharges : (res.data.bankCharges || 0),
           totalExpenditure: res.data.totalExpenditure || 0,
           remarks: res.data.remarks || ""
         });
@@ -197,7 +197,14 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
                        className="w-full bg-slate-950 border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white text-sm outline-none focus:border-rose-500/50 transition-all font-mono"
                      />
                   </div>
-                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Fees & Transaction Charges</label>
+                  <div className="flex flex-col gap-1 mt-1 pl-1">
+                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Fees & Transaction Charges (Manual)</label>
+                    {currentLedger && (currentLedger.bankCharges - (currentLedger.manualBankCharges || 0)) > 0 && (
+                      <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest leading-relaxed">
+                        Total Bank Charges: Rs. {currentLedger.bankCharges.toLocaleString()} (incl. Rs. {(currentLedger.bankCharges - (currentLedger.manualBankCharges || 0)).toLocaleString()} from Loan disbursements)
+                      </span>
+                    )}
+                  </div>
                </div>
             </div>
 
