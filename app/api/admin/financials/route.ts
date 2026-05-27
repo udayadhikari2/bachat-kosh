@@ -40,6 +40,12 @@ export async function POST(req: Request) {
       initialLoanInterest: Number(financials.initialLoanInterest) || 0,
       initialNav: Number(financials.initialNav) || 0,
       initialMiscellaneous: Number(financials.initialMiscellaneous) || 0,
+      initialBankCharges: Number(financials.initialBankCharges) || 0,
+      initialExpenditure: Number(financials.initialExpenditure) || 0,
+      initialOpeningBalance: Number(financials.initialOpeningBalance) || 0,
+      initialOpeningMonth: financials.initialOpeningMonth || "",
+      initialOpeningYear: Number(financials.initialOpeningYear) || 0,
+      isFrameworkLocked: !!financials.isFrameworkLocked,
     };
 
     org.markModified("financials");

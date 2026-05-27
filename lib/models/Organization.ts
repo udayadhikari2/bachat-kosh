@@ -28,6 +28,8 @@ export interface IOrganization extends Document {
     initialLoanInterest: number;
     initialNav: number;
     initialMiscellaneous: number;
+    initialBankCharges?: number;
+    initialExpenditure?: number;
     initialOpeningBalance?: number;
     initialOpeningMonth?: string;
     initialOpeningYear?: number;
@@ -68,6 +70,8 @@ const OrganizationSchema: Schema = new Schema(
       initialLoanInterest: { type: Number, default: 0 },
       initialNav: { type: Number, default: 0 },
       initialMiscellaneous: { type: Number, default: 0 },
+      initialBankCharges: { type: Number, default: 0 },
+      initialExpenditure: { type: Number, default: 0 },
       initialOpeningBalance: { type: Number, default: 0 },
       initialOpeningMonth: { type: String, default: "" },
       initialOpeningYear: { type: Number, default: 0 },
@@ -78,6 +82,11 @@ const OrganizationSchema: Schema = new Schema(
   },
   { timestamps: true }
 );
+
+// Cache-buster to handle hot-reloading issues in development
+if (mongoose.models.Organization && !mongoose.models.Organization.schema.path('financials.initialBankCharges')) {
+  delete (mongoose.models as any).Organization;
+}
 
 export default mongoose.models.Organization ||
   mongoose.model<IOrganization>("Organization", OrganizationSchema);

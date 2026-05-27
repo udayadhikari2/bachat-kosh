@@ -26,6 +26,8 @@ export default function ExternalFundsPage() {
     initialLoanInterest: 0,
     initialNav: 0,
     initialMiscellaneous: 0,
+    initialBankCharges: 0,
+    initialExpenditure: 0,
     initialOpeningBalance: 0,
     initialOpeningMonth: "",
     initialOpeningYear: 0,
@@ -52,6 +54,8 @@ export default function ExternalFundsPage() {
           initialLoanInterest: res.data.financials.initialLoanInterest || 0,
           initialNav: res.data.financials.initialNav || 0,
           initialMiscellaneous: res.data.financials.initialMiscellaneous || 0,
+          initialBankCharges: res.data.financials.initialBankCharges || 0,
+          initialExpenditure: res.data.financials.initialExpenditure || 0,
           initialOpeningBalance: res.data.financials.initialOpeningBalance || 0,
           initialOpeningMonth: res.data.financials.initialOpeningMonth || "",
           initialOpeningYear: res.data.financials.initialOpeningYear || 0,
@@ -235,30 +239,32 @@ export default function ExternalFundsPage() {
               <div className="relative mb-12">
                 <div className={`grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-6 transition-all duration-500 ${finForm.isFrameworkLocked ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
                 {[
-                  { key: 'initialMonthlyCollection', label: 'Monthly Collection', lifetimeKey: 'totalApprovedAmount' },
-                  { key: 'initialDelayedFine', label: 'Delayed Fines', lifetimeKey: 'totalDelayedFinePaid' },
-                  { key: 'initialServiceCharge', label: 'Service Charges', lifetimeKey: 'totalServiceChargePaid' },
-                  { key: 'initialBankInterest', label: 'Bank Interest', lifetimeKey: 'bankInterest' },
-                  { key: 'initialLoanInterest', label: 'Loan Interest', lifetimeKey: 'totalLoanInterestPaid' },
-                  { key: 'initialNav', label: 'NAV Collection', lifetimeKey: 'navCollection' },
-                  { key: 'initialMiscellaneous', label: 'Miscellaneous', lifetimeKey: 'miscellaneous' },
+                  { key: 'initialMonthlyCollection', label: 'Monthly Collection', lifetimeKey: 'totalApprovedAmount', isOutflow: false },
+                  { key: 'initialDelayedFine', label: 'Delayed Fines', lifetimeKey: 'totalDelayedFinePaid', isOutflow: false },
+                  { key: 'initialServiceCharge', label: 'Service Charges', lifetimeKey: 'totalServiceChargePaid', isOutflow: false },
+                  { key: 'initialBankInterest', label: 'Bank Interest', lifetimeKey: 'bankInterest', isOutflow: false },
+                  { key: 'initialLoanInterest', label: 'Loan Interest', lifetimeKey: 'totalLoanInterestPaid', isOutflow: false },
+                  { key: 'initialNav', label: 'NAV Collection', lifetimeKey: 'navCollection', isOutflow: false },
+                  { key: 'initialMiscellaneous', label: 'Miscellaneous', lifetimeKey: 'miscellaneous', isOutflow: false },
+                  { key: 'initialBankCharges', label: 'Bank Charges (Initial)', lifetimeKey: 'bankCharges', isOutflow: true },
+                  { key: 'initialExpenditure', label: 'Expenditures (Initial)', lifetimeKey: 'totalExpenditure', isOutflow: true },
                 ].map(f => (
-                  <div key={f.key} className="flex flex-col bg-slate-950/40 border border-slate-800/60 p-6 rounded-3xl transition-all hover:bg-slate-950/60 hover:border-emerald-500/30 group">
-                    <label className="text-sm font-black text-emerald-500 block">{f.label}</label>
+                  <div key={f.key} className={`flex flex-col bg-slate-950/40 border border-slate-800/60 p-6 rounded-3xl transition-all hover:bg-slate-950/60 group ${f.isOutflow ? 'hover:border-rose-500/30' : 'hover:border-emerald-500/30'}`}>
+                    <label className={`text-sm font-black block ${f.isOutflow ? 'text-rose-400' : 'text-emerald-500'}`}>{f.label}</label>
                     <div className="mb-3">
-                      <p className="text-xs font-black text-red-500 tracking-[0.1em] truncate">
+                      <p className={`text-xs font-black tracking-[0.1em] truncate ${f.isOutflow ? 'text-rose-500' : 'text-red-500'}`}>
                         Rs. {lifetimeData?.[f.lifetimeKey]?.toLocaleString('en-IN') || 0}
                       </p>
                     </div>
                     <div className="space-y-3">
                       <div className="relative group/input">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-600 group-focus-within/input:text-emerald-500 transition-colors">Rs.</span>
+                        <span className={`absolute left-4 top-1/2 -translate-y-1/2 text-sm font-black text-slate-600 transition-colors ${f.isOutflow ? 'group-focus-within/input:text-rose-500' : 'group-focus-within/input:text-emerald-500'}`}>Rs.</span>
                         <input
                           type="number"
                           value={(finForm as any)[f.key] === 0 ? "" : (finForm as any)[f.key]}
                           placeholder="0"
                           onChange={(e) => setFinForm({ ...finForm, [f.key]: Number(e.target.value) })}
-                          className="w-full bg-slate-950 border border-slate-800/80 focus:border-emerald-500 rounded-2xl pl-12 pr-4 py-4 text-sm outline-none transition-all font-black text-emerald-400 placeholder-slate-800 shadow-inner"
+                          className={`w-full bg-slate-950 border border-slate-800/80 rounded-2xl pl-12 pr-4 py-4 text-sm outline-none transition-all font-black placeholder-slate-800 shadow-inner ${f.isOutflow ? 'focus:border-rose-500 text-rose-400' : 'focus:border-emerald-500 text-emerald-400'}`}
                         />
                       </div>
                     </div>

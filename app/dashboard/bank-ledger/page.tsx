@@ -121,6 +121,16 @@ export default function BankLedgerPage() {
     );
   }
 
+  const isBaseline = baseline && baseline.baselineMonth === targetMonth && baseline.baselineYear === targetYear;
+  const netDebit = ledger
+    ? (
+        (ledger.totalLoanDisbursed || 0) +
+        (ledger.bankCharges || 0) +
+        (ledger.totalExpenditure || 0) -
+        (isBaseline ? (baseline.initialBankCharges || 0) + (baseline.initialExpenditure || 0) : 0)
+      )
+    : 0;
+
   return (
     <div className="space-y-8 animate-in fade-in duration-700">
       {/* Header */}
@@ -169,7 +179,7 @@ export default function BankLedgerPage() {
             <TrendingDown className="w-24 h-24 text-rose-500" />
           </div>
           <p className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1 text-rose-500">Net Debit</p>
-          <p className="text-2xl font-black text-white tracking-tight">Rs. {(ledger?.totalLoanDisbursed + ledger?.bankCharges + ledger?.totalExpenditure).toLocaleString() || 0}</p>
+          <p className="text-2xl font-black text-white tracking-tight">Rs. {netDebit.toLocaleString()}</p>
           <div className="mt-4 flex items-center gap-2 text-rose-500/60">
             <ArrowDownRight className="w-3 h-3" />
             <p className="text-[8px] font-bold uppercase tracking-widest">Total Outflow</p>

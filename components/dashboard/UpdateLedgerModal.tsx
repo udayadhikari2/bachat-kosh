@@ -9,7 +9,9 @@ import {
   FileText,
   Save,
   Calendar,
-  ChevronDown
+  ChevronDown,
+  AlertCircle,
+  Lock
 } from "lucide-react";
 import { motion } from "framer-motion";
 import { updateBankLedger, getBankLedger, getOrganizationBaseline } from "@/lib/actions/bank-ledger";
@@ -32,6 +34,7 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
   const [targetYear, setTargetYear] = useState(parseInt(initialLedger.month.split(" ")[1]));
   const [baseline, setBaseline] = useState<any>(null);
   const current = getCurrentNepaliDate();
+  const isBaseline = !!(baseline && baseline.baselineMonth === targetMonth && baseline.baselineYear === targetYear);
 
   const [formData, setFormData] = useState({
     bankInterest: initialLedger.bankInterest || 0,
@@ -161,6 +164,17 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
           </div>
 
           <div className={`space-y-8 transition-all duration-300 ${fetching ? 'opacity-40 pointer-events-none grayscale' : ''}`}>
+            {isBaseline && (
+              <div className="p-5 bg-amber-500/10 border border-amber-500/20 rounded-3xl flex gap-4 items-start animate-in fade-in duration-300">
+                <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-black text-amber-500 uppercase tracking-wider">Baseline Month Settings Locked</p>
+                  <p className="text-[10px] text-slate-400 font-bold tracking-wide mt-1 leading-relaxed">
+                    Notice: This month is the configured baseline month. Bank Charges and Expenditures are locked here and synchronized from the External Funds configuration.
+                  </p>
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                {/* Interest */}
                <div className="space-y-4">
@@ -188,23 +202,30 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
                   </div>
                   <div className="relative group">
                      <TrendingDown className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-rose-500 transition-colors" />
-                     <input 
-                       type="number" 
-                       step="0.01"
-                       placeholder="Bank Charges"
-                       value={formData.bankCharges}
-                       onChange={(e) => setFormData({ ...formData, bankCharges: Number(e.target.value) })}
-                       className="w-full bg-slate-950 border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white text-sm outline-none focus:border-rose-500/50 transition-all font-mono"
-                     />
-                  </div>
-                  <div className="flex flex-col gap-1 mt-1 pl-1">
-                    <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Fees & Transaction Charges (Manual)</label>
-                    {currentLedger && (currentLedger.bankCharges - (currentLedger.manualBankCharges || 0)) > 0 && (
-                      <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest leading-relaxed">
-                        Total Bank Charges: Rs. {currentLedger.bankCharges.toLocaleString()} (incl. Rs. {(currentLedger.bankCharges - (currentLedger.manualBankCharges || 0)).toLocaleString()} from Loan disbursements)
-                      </span>
-                    )}
-                  </div>
+                      <input 
+                        type="number" 
+                        step="0.01"
+                        placeholder="Bank Charges"
+                        disabled={isBaseline}
+                        value={formData.bankCharges}
+                        onChange={(e) => setFormData({ ...formData, bankCharges: Number(e.target.value) })}
+                        className={`w-full bg-slate-950 border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white text-sm outline-none focus:border-rose-500/50 transition-all font-mono ${isBaseline ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      />
+                   </div>
+                   <div className="flex flex-col gap-1 mt-1 pl-1">
+                     <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Fees & Transaction Charges (Manual)</label>
+                     {isBaseline ? (
+                       <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest leading-relaxed flex items-center gap-1.5 mt-1">
+                         <Lock className="w-2.5 h-2.5" /> Synchronized from External Funds Config
+                       </span>
+                     ) : (
+                       currentLedger && (currentLedger.bankCharges - (currentLedger.manualBankCharges || 0)) > 0 && (
+                         <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest leading-relaxed">
+                           Total Bank Charges: Rs. {currentLedger.bankCharges.toLocaleString()} (incl. Rs. {(currentLedger.bankCharges - (currentLedger.manualBankCharges || 0)).toLocaleString()} from Loan disbursements)
+                         </span>
+                       )
+                     )}
+                   </div>
                </div>
             </div>
 
@@ -215,16 +236,24 @@ export default function UpdateLedgerModal({ ledger: initialLedger, onClose, onUp
                </div>
                <div className="relative group">
                   <Save className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-rose-500 transition-colors" />
-                  <input 
-                    type="number" 
-                    step="0.01"
-                    placeholder="Total Expenditure"
-                    value={formData.totalExpenditure}
-                    onChange={(e) => setFormData({ ...formData, totalExpenditure: Number(e.target.value) })}
-                    className="w-full bg-slate-950 border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white text-sm outline-none focus:border-rose-500/50 transition-all font-mono"
-                  />
-               </div>
-               <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest ml-1">Combined Monthly Expenses</label>
+                   <input 
+                     type="number" 
+                     step="0.01"
+                     placeholder="Total Expenditure"
+                     disabled={isBaseline}
+                     value={formData.totalExpenditure}
+                     onChange={(e) => setFormData({ ...formData, totalExpenditure: Number(e.target.value) })}
+                     className={`w-full bg-slate-950 border border-white/10 rounded-2xl pl-12 pr-4 py-4 text-white text-sm outline-none focus:border-rose-500/50 transition-all font-mono ${isBaseline ? 'opacity-50 cursor-not-allowed' : ''}`}
+                   />
+                </div>
+                <div className="flex flex-col gap-1 mt-1 pl-1">
+                  <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest">Combined Monthly Expenses</label>
+                  {isBaseline && (
+                    <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest leading-relaxed flex items-center gap-1.5 mt-1">
+                      <Lock className="w-2.5 h-2.5" /> Synchronized from External Funds Config
+                    </span>
+                  )}
+                </div>
             </div>
 
             {/* Remarks */}

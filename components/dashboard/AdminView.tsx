@@ -163,7 +163,14 @@ export default function AdminView() {
   }, [lifetimeStats?.financials]);
 
   const periodicInflow = stats ? (stats.grandTotalCollection + (stats.totalLoanRepaid || 0)) : 0;
-  const periodicOutflow = stats ? ((ledgerData?.totalExpenditure || 0) + (ledgerData?.totalLoanDisbursed || 0) + (ledgerData?.bankCharges || 0)) : 0;
+  const periodicOutflow = stats
+    ? (
+        (ledgerData?.totalExpenditure || 0) +
+        (ledgerData?.totalLoanDisbursed || 0) +
+        (ledgerData?.bankCharges || 0) -
+        (isInitialMonth ? (lifetimeStats?.financials?.initialExpenditure || 0) + (lifetimeStats?.financials?.initialBankCharges || 0) : 0)
+      )
+    : 0;
 
   return (
     <div className="space-y-2 animate-in fade-in slide-in-from-bottom-4 duration-700">

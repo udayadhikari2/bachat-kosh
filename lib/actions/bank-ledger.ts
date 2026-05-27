@@ -20,7 +20,9 @@ export async function getOrganizationBaseline(organizationId: string) {
       success: true,
       baselineMonth: org.financials.initialOpeningMonth || "",
       baselineYear: org.financials.initialOpeningYear || 0,
-      baselineBalance: org.financials.initialOpeningBalance || 0
+      baselineBalance: org.financials.initialOpeningBalance || 0,
+      initialBankCharges: org.financials.initialBankCharges || 0,
+      initialExpenditure: org.financials.initialExpenditure || 0
     };
   } catch (error: any) {
     return { success: false, error: error.message };
@@ -86,11 +88,22 @@ export async function updateBankLedger(id: string, data: {
     const ledger = await BankLedger.findById(id);
     if (!ledger) throw new Error("Ledger not found");
 
+    const org = await Organization.findById(ledger.organizationId);
+    const baselineMonthStr = org?.financials ? `${org.financials.initialOpeningMonth} ${org.financials.initialOpeningYear}` : "";
+    const isBaseline = baselineMonthStr === ledger.month;
+
     if (data.bankInterest !== undefined) ledger.bankInterest = data.bankInterest;
-    if (data.bankCharges !== undefined) ledger.manualBankCharges = data.bankCharges;
-    if (data.totalExpenditure !== undefined) ledger.totalExpenditure = data.totalExpenditure;
     if (data.openingBalance !== undefined) ledger.openingBalance = data.openingBalance;
     if (data.remarks !== undefined) ledger.remarks = data.remarks;
+
+    if (isBaseline) {
+      // Force initial values for baseline month
+      ledger.manualBankCharges = org?.financials?.initialBankCharges || 0;
+      ledger.totalExpenditure = org?.financials?.initialExpenditure || 0;
+    } else {
+      if (data.bankCharges !== undefined) ledger.manualBankCharges = data.bankCharges;
+      if (data.totalExpenditure !== undefined) ledger.totalExpenditure = data.totalExpenditure;
+    }
 
     // Query active loan bank charges for the target month
     const target = parseNepaliMonth(ledger.month);
@@ -117,19 +130,27 @@ export async function updateBankLedger(id: string, data: {
     ledger.bankCharges = manualBankCharges + totalLoanBankCharges;
 
     // Recalculate closing balance
+    // For baseline month, initial expenditure/charges are shown in the ledger,
+    // but they must NOT be subtracted from closingBalance because they are already accounted for in initialOpeningBalance.
+    const chargesToSubtract = isBaseline 
+      ? (ledger.bankCharges - (org?.financials?.initialBankCharges || 0)) 
+      : ledger.bankCharges;
+    const expenditureToSubtract = isBaseline 
+      ? (ledger.totalExpenditure - (org?.financials?.initialExpenditure || 0)) 
+      : ledger.totalExpenditure;
+
     ledger.closingBalance =
       ledger.openingBalance +
       ledger.totalDeposits +
       ledger.totalLoanRepaid +
       ledger.bankInterest -
       ledger.totalLoanDisbursed -
-      ledger.bankCharges -
-      ledger.totalExpenditure;
+      chargesToSubtract -
+      expenditureToSubtract;
 
     await ledger.save();
 
     // Auto-lock the framework config when an active ledger is committed/updated
-    const org = await Organization.findById(ledger.organizationId);
     if (org && org.financials && !org.financials.isFrameworkLocked) {
       org.financials.isFrameworkLocked = true;
       org.markModified('financials');
@@ -190,7 +211,8 @@ export async function reconcileMonthlyTotals(organizationId: string, month: stri
         {
           $match: {
             organizationId: orgIdObj,
-            month: { $regex: month, $options: "i" }
+            month: { $regex: month, $options: "i" },
+            type: { $ne: "ADVANCE" }
           }
         },
         { $group: { _id: null, total: { $sum: "$amount" } } }
@@ -262,20 +284,36 @@ export async function reconcileMonthlyTotals(organizationId: string, month: stri
     ledger.totalLoanDisbursed = totalLoanDisbursed;
     ledger.totalLoanRepaid = totalLoanRepaid;
 
+    const isBaseline = baselineMonthStr === month;
+
+    if (isBaseline) {
+      ledger.manualBankCharges = org?.financials?.initialBankCharges || 0;
+      ledger.totalExpenditure = org?.financials?.initialExpenditure || 0;
+    }
+
     // Recalculate bankCharges
     const manualBankCharges = typeof ledger.manualBankCharges === "number" ? ledger.manualBankCharges : ledger.bankCharges;
     ledger.manualBankCharges = manualBankCharges;
     ledger.bankCharges = manualBankCharges + totalLoanBankCharges;
 
     // Recalculate closing balance
+    // For baseline month, initial expenditure/charges are shown in the ledger,
+    // but they must NOT be subtracted from closingBalance because they are already accounted for in initialOpeningBalance.
+    const chargesToSubtract = isBaseline 
+      ? (ledger.bankCharges - (org?.financials?.initialBankCharges || 0)) 
+      : ledger.bankCharges;
+    const expenditureToSubtract = isBaseline 
+      ? (ledger.totalExpenditure - (org?.financials?.initialExpenditure || 0)) 
+      : ledger.totalExpenditure;
+
     ledger.closingBalance =
       ledger.openingBalance +
       totalDeposits +
       totalLoanRepaid +
       ledger.bankInterest -
       totalLoanDisbursed -
-      ledger.bankCharges -
-      ledger.totalExpenditure;
+      chargesToSubtract -
+      expenditureToSubtract;
 
     await ledger.save();
 

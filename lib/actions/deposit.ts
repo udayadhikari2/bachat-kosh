@@ -15,6 +15,7 @@ import { parseNepaliMonth, getDaysInMonth, bsToAd, NEPALI_MONTHS, adToBs } from 
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
+import { reconcileMonthlyTotals } from "@/lib/actions/bank-ledger";
 
 export async function getDeposits(params: {
   organizationId: string;
@@ -536,6 +537,8 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       initialNav: 0,
       initialMiscellaneous: 0,
       initialAdvancedPayment: 0,
+      initialBankCharges: 0,
+      initialExpenditure: 0,
     };
 
     const matchQuery: any = { organizationId: targetIdObj };
@@ -887,6 +890,14 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
 
     const mergeVault = !targetMonth || targetMonth === "all";
 
+    const baselineMonthStr = org?.financials ? `${org.financials.initialOpeningMonth} ${org.financials.initialOpeningYear}` : "";
+    const hasBaselineLedger = !!(await BankLedger.exists({ organizationId: targetIdObj, month: baselineMonthStr }));
+
+    const initialBankCharges = Number(financials.initialBankCharges) || 0;
+    const initialExpenditure = Number(financials.initialExpenditure) || 0;
+
+    const shouldAddInitialsToCurrent = !hasBaselineLedger && (isAllTime || targetMonth === baselineMonthStr);
+
     const mergedTotals = {
       totalApprovedAmount: (agg.totalApprovedAmount || 0) + (mergeVault ? (financials.initialMonthlyCollection || 0) : 0),
       totalDelayedFinePaid: (agg.totalDelayedFinePaid || 0) + (loanAgg.penalty || 0) + (mergeVault ? (financials.initialDelayedFine || 0) : 0),
@@ -897,8 +908,8 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       bankInterest: (bankAgg.totalBankInterest || 0) + (mergeVault ? (financials.initialBankInterest || 0) : 0),
       navCollection: (agg.totalNavCollection || 0) + (mergeVault ? (financials.initialNav || 0) : 0),
       miscellaneous: (agg.totalMiscRevenue || 0) + (mergeVault ? (financials.initialMiscellaneous || 0) : 0),
-      totalExpenditure: (bankAgg.totalExpenditure || 0),
-      bankCharges: (bankAgg.totalBankCharges || 0),
+      totalExpenditure: (bankAgg.totalExpenditure || 0) + (shouldAddInitialsToCurrent ? initialExpenditure : 0),
+      bankCharges: (bankAgg.totalBankCharges || 0) + (shouldAddInitialsToCurrent ? initialBankCharges : 0),
       totalLoanDisbursed: (bankAgg.totalLoanDisbursed || 0),
       totalLoanRepaid: (loanAgg.principal || 0), // Use only the principal portion for this specific row
       // Upto Stats (Cumulative up to Target Month - includes everything)
@@ -922,8 +933,8 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
           ((uptoBaseAgg.totalLegacyMisc || 0) + (uptoInstAgg.totalMisc || 0) + (financials.initialMiscellaneous || 0)) +
           ((uptoBaseAgg.totalAdvancedPayment || 0) + (uptoLoanAgg.advance || 0) + (financials.initialAdvancedPayment || 0))
         ) - (uptoBaseAgg.totalCreditUsed || 0),
-        totalExpenditure: (uptoBankAgg.totalExpenditure || 0),
-        bankCharges: (uptoBankAgg.totalBankCharges || 0),
+        totalExpenditure: (uptoBankAgg.totalExpenditure || 0) + (hasBaselineLedger ? 0 : initialExpenditure),
+        bankCharges: (uptoBankAgg.totalBankCharges || 0) + (hasBaselineLedger ? 0 : initialBankCharges),
       },
       // Prev Stats (Cumulative up to Month-1 - includes initial collections)
       prev: {
@@ -946,8 +957,8 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
           ((prevBaseAgg.totalLegacyMisc || 0) + (prevInstAgg.totalMisc || 0) + (financials.initialMiscellaneous || 0)) +
           ((prevBaseAgg.totalAdvancedPayment || 0) + (prevLoanAgg.advance || 0) + (financials.initialAdvancedPayment || 0))
         ) - (prevBaseAgg.totalCreditUsed || 0),
-        totalExpenditure: (prevBankAgg.totalExpenditure || 0),
-        bankCharges: (prevBankAgg.totalBankCharges || 0),
+        totalExpenditure: (prevBankAgg.totalExpenditure || 0) + ((!hasBaselineLedger && targetMonth !== baselineMonthStr) ? initialExpenditure : 0),
+        bankCharges: (prevBankAgg.totalBankCharges || 0) + ((!hasBaselineLedger && targetMonth !== baselineMonthStr) ? initialBankCharges : 0),
       }
     };
 
@@ -1169,6 +1180,8 @@ export async function updateOrganizationFinancials(organizationId: string, finan
       initialLoanInterest: Number(financials.initialLoanInterest) || 0,
       initialNav: Number(financials.initialNav) || 0,
       initialMiscellaneous: Number(financials.initialMiscellaneous) || 0,
+      initialBankCharges: Number(financials.initialBankCharges) || 0,
+      initialExpenditure: Number(financials.initialExpenditure) || 0,
       initialOpeningBalance: Number(financials.initialOpeningBalance) || 0,
       initialOpeningMonth: financials.initialOpeningMonth || "",
       initialOpeningYear: Number(financials.initialOpeningYear) || 0,
@@ -1177,6 +1190,12 @@ export async function updateOrganizationFinancials(organizationId: string, finan
 
     org.markModified('financials');
     await org.save();
+
+    // Trigger reconciliation on the baseline month so the bank ledger reflects the new baseline values immediately
+    if (financials.initialOpeningMonth && financials.initialOpeningYear) {
+      const baselineMonthStr = `${financials.initialOpeningMonth} ${financials.initialOpeningYear}`;
+      await reconcileMonthlyTotals(organizationId, baselineMonthStr).catch(console.error);
+    }
 
     if (audit) {
       audit.status = "SUCCESS";

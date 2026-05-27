@@ -112,7 +112,8 @@ export const generateFinancialReport = (data: FinancialReportData) => {
   } = data;
 
   const monthlyInflow = stats?.grandTotalCollection || 0;
-  const monthlyOutflow = (stats?.totalExpenditure || 0) + (stats?.bankCharges || 0);
+  const isBaseline = targetMonth === lifetimeStats?.financials?.initialOpeningMonth && Number(targetYear) === Number(lifetimeStats?.financials?.initialOpeningYear);
+  const monthlyOutflow = (stats?.totalExpenditure || 0) + (stats?.bankCharges || 0) - (isBaseline ? (lifetimeStats?.financials?.initialExpenditure || 0) + (lifetimeStats?.financials?.initialBankCharges || 0) : 0);
 
   const uptoInflow = stats?.upto?.grandTotalCollection || 0;
 
@@ -748,8 +749,13 @@ export const exportFinancialToExcel = (data: FinancialReportData) => {
     perMemberWealth, 
     totalMembers, 
     timestamp, 
-    ledgerData 
+    ledgerData,
+    stats,
+    lifetimeStats
   } = data;
+
+  const isBaseline = targetMonth === lifetimeStats?.financials?.initialOpeningMonth && Number(targetYear) === Number(lifetimeStats?.financials?.initialOpeningYear);
+  const excelOutflow = (ledgerData?.totalExpenditure || 0) + (ledgerData?.bankCharges || 0) - (isBaseline ? (lifetimeStats?.financials?.initialExpenditure || 0) + (lifetimeStats?.financials?.initialBankCharges || 0) : 0);
 
   const rows = [
     ["Institutional Financial Audit - " + orgName],
@@ -760,7 +766,7 @@ export const exportFinancialToExcel = (data: FinancialReportData) => {
     ["1. EXECUTIVE CASH POSITION"],
     ["Opening Balance", ledgerData?.openingBalance || 0],
     ["Inflow (Period)", collection.reduce((a, b) => a + b.val, 0) + (assetTracking?.advanceInflow || 0) + (assetTracking?.principalRepayment || 0) - (assetTracking?.advanceUsed || 0)],
-    ["Outflow (Period)", (ledgerData?.totalExpenditure || 0) + (ledgerData?.bankCharges || 0)],
+    ["Outflow (Period)", excelOutflow],
     ["Closing Balance", ledgerData?.closingBalance || 0],
     [],
     ["2. REVENUE & COLLECTIONS (OPERATIONAL)"],
