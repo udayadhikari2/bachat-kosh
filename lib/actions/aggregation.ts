@@ -10,6 +10,7 @@ import mongoose from "mongoose";
 import User from "@/lib/models/User";
 import Deposit from "@/lib/models/Deposit";
 import { parseNepaliMonth, getDaysInMonth, bsToAd, getCurrentNepaliDate } from "@/lib/utils/nepali-date";
+import { reconcileMonthlyTotals } from "@/lib/actions/bank-ledger";
 
 export async function getAggregations(params: {
   organizationId: string;
@@ -30,6 +31,7 @@ export async function getAggregations(params: {
 
     const [data, total] = await Promise.all([
       Aggregation.find(query)
+        .populate("memberId", "name accountNumber advanceBalance profileImage")
         .sort({ date: -1 })
         .skip((page - 1) * limit)
         .limit(limit)
@@ -115,6 +117,8 @@ export async function createAggregation(data: any) {
       newValues: agg.toObject(),
       status: "SUCCESS"
     });
+
+    await reconcileMonthlyTotals(data.organizationId, data.month).catch(console.error);
 
     revalidatePath("/dashboard/users");
     revalidatePath("/dashboard/loans");
@@ -273,6 +277,12 @@ export async function updateAggregation(id: string, data: any) {
       status: "SUCCESS"
     });
 
+    const monthsToReconcile = new Set<string>([oldVal.month]);
+    if (updated.month) monthsToReconcile.add(updated.month);
+    for (const m of monthsToReconcile) {
+      await reconcileMonthlyTotals(oldVal.organizationId.toString(), m).catch(console.error);
+    }
+
     revalidatePath("/dashboard/users");
     revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
@@ -325,6 +335,8 @@ export async function deleteAggregation(id: string) {
       status: "SUCCESS"
     });
 
+    await reconcileMonthlyTotals(oldVal.organizationId.toString(), oldVal.month).catch(console.error);
+
     revalidatePath("/dashboard/users");
     revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
@@ -332,6 +344,155 @@ export async function deleteAggregation(id: string) {
     revalidatePath("/dashboard", "layout");
     return { success: true };
   } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function transferAggregationCredit(params: {
+  aggregationId: string;
+  targetMemberId: string;
+  adminId: string;
+  amount: number;
+}) {
+  try {
+    await connectDB();
+
+    const agg = await Aggregation.findById(params.aggregationId);
+    if (!agg) throw new Error("Aggregation record not found");
+    if (agg.type !== "ADVANCE" || !agg.memberId) {
+      throw new Error("Only ADVANCE type aggregations can be transferred");
+    }
+
+    const enteredAmount = params.amount;
+    if (!enteredAmount || enteredAmount <= 0) {
+      throw new Error("Transfer amount must be greater than zero");
+    }
+    if (enteredAmount > agg.amount) {
+      throw new Error(`Transfer amount (Rs. ${enteredAmount}) cannot exceed the aggregation's credit amount (Rs. ${agg.amount})`);
+    }
+
+    const sourceMemberId = agg.memberId.toString();
+    const destinationMemberId = params.targetMemberId;
+
+    if (sourceMemberId === destinationMemberId) {
+      throw new Error("Cannot transfer credit to the same member");
+    }
+
+    const [sourceMember, destMember] = await Promise.all([
+      User.findById(sourceMemberId),
+      User.findById(destinationMemberId)
+    ]);
+
+    if (!sourceMember) throw new Error("Source member not found");
+    if (!destMember) throw new Error("Destination member not found");
+    if (!destMember.isActive) throw new Error("Destination member is disabled");
+    if (!destMember.organizationId || destMember.organizationId.toString() !== agg.organizationId.toString()) {
+      throw new Error("Destination member does not belong to the same organization");
+    }
+
+    // Check if source member has enough advance balance
+    if ((sourceMember.advanceBalance || 0) < enteredAmount) {
+      throw new Error(`Insufficient advance balance. Source member only has Rs. ${sourceMember.advanceBalance || 0} remaining, but you requested to transfer Rs. ${enteredAmount}.`);
+    }
+
+    // Update balances
+    sourceMember.advanceBalance = (sourceMember.advanceBalance || 0) - enteredAmount;
+    destMember.advanceBalance = (destMember.advanceBalance || 0) + enteredAmount;
+
+    const sourceName = sourceMember.name;
+    const destName = destMember.name;
+
+    // Save members
+    await Promise.all([
+      sourceMember.save(),
+      destMember.save()
+    ]);
+
+    // Check if full or partial transfer
+    const isFullTransfer = Math.abs(enteredAmount - agg.amount) < 0.01;
+
+    if (isFullTransfer) {
+      // Full transfer: just change ownership of the aggregation and linked deposit
+      const oldRemarks = agg.remarks || "";
+      agg.memberId = new mongoose.Types.ObjectId(destinationMemberId);
+      agg.remarks = `${oldRemarks} (Transferred Rs. ${enteredAmount} from ${sourceName} to ${destName})`.trim();
+      await agg.save();
+
+      const linkedDeposit = await Deposit.findOne({ aggregationId: agg._id });
+      if (linkedDeposit) {
+        linkedDeposit.userId = new mongoose.Types.ObjectId(destinationMemberId);
+        const oldDepRemarks = linkedDeposit.remarks || "";
+        linkedDeposit.remarks = `${oldDepRemarks} (Transferred Rs. ${enteredAmount} from ${sourceName} to ${destName})`.trim();
+        await linkedDeposit.save();
+      }
+    } else {
+      // Partial transfer:
+      // 1. Deduct amount from original aggregation
+      const oldRemarks = agg.remarks || "";
+      agg.amount = agg.amount - enteredAmount;
+      agg.remarks = `${oldRemarks} (Transferred Rs. ${enteredAmount} portion to ${destName})`.trim();
+      await agg.save();
+
+      // 2. Create a new aggregation for the destination member
+      const newAgg = await Aggregation.create({
+        organizationId: agg.organizationId,
+        adminId: new mongoose.Types.ObjectId(params.adminId),
+        type: "ADVANCE",
+        memberId: new mongoose.Types.ObjectId(destinationMemberId),
+        amount: enteredAmount,
+        month: agg.month,
+        date: agg.date,
+        remarks: `[PARTIAL TRANSFER] Received Rs. ${enteredAmount} of credit from ${sourceName}`
+      });
+
+      // 3. Update original Deposit to reflect reduced amount
+      const linkedDeposit = await Deposit.findOne({ aggregationId: agg._id });
+      if (linkedDeposit) {
+        linkedDeposit.advancedPayment = linkedDeposit.advancedPayment - enteredAmount;
+        const oldDepRemarks = linkedDeposit.remarks || "";
+        linkedDeposit.remarks = `${oldDepRemarks} (Transferred Rs. ${enteredAmount} portion to ${destName})`.trim();
+        await linkedDeposit.save();
+      }
+
+      // 4. Create a new Deposit history record for the destination member
+      await Deposit.create({
+        userId: new mongoose.Types.ObjectId(destinationMemberId),
+        organizationId: agg.organizationId,
+        amount: 0,
+        advancedPayment: enteredAmount,
+        month: agg.month,
+        depositType: "ADVANCE",
+        depositDate: agg.date,
+        status: "APPROVED",
+        remarks: `[AGGREGATION CREDIT] [PARTIAL TRANSFER] Received from ${sourceName}`,
+        verifiedBy: new mongoose.Types.ObjectId(params.adminId),
+        aggregationId: newAgg._id
+      });
+    }
+
+    // Revalidate paths
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
+
+    // Reconcile totals just in case
+    await reconcileMonthlyTotals(agg.organizationId.toString(), agg.month).catch(console.error);
+
+    // Create Audit Log
+    await AdminAudit.create({
+      adminId: params.adminId,
+      organizationId: agg.organizationId,
+      action: "TRANSFER_CREDIT",
+      oldValues: { memberId: sourceMemberId, amount: agg.amount + (isFullTransfer ? 0 : enteredAmount) },
+      newValues: { memberId: destinationMemberId, amount: enteredAmount },
+      status: "SUCCESS"
+    });
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[TRANSFER_CREDIT_ERROR]:", error);
     return { success: false, error: error.message };
   }
 }

@@ -6,6 +6,7 @@ import Organization from "@/lib/models/Organization";
 import AdminAudit from "@/lib/models/AdminAudit";
 import { revalidatePath } from "next/cache";
 import { authOptions } from "@/lib/auth-config";
+import { reconcileMonthlyTotals } from "@/lib/actions/bank-ledger";
 
 export async function POST(req: Request) {
   try {
@@ -60,6 +61,12 @@ export async function POST(req: Request) {
       newValues: org.financials,
       status: "SUCCESS"
     });
+
+    // Reconcile baseline month immediately
+    if (financials.initialOpeningMonth && financials.initialOpeningYear) {
+      const baselineMonthStr = `${financials.initialOpeningMonth} ${financials.initialOpeningYear}`;
+      await reconcileMonthlyTotals(organizationId, baselineMonthStr).catch(console.error);
+    }
 
     // Bust caches
     revalidatePath("/", "layout");

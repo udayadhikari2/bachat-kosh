@@ -24,7 +24,6 @@ import {
 import Image from "next/image";
 import { toast } from "react-hot-toast";
 import { getMemberActivity, deleteTimelineEvents } from "@/lib/actions/member";
-import { updateUserAdvanceBalance } from "@/lib/actions/user";
 import { adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
 
 interface MemberHistoryModalProps {
@@ -38,12 +37,7 @@ export default function MemberHistoryModal({ userId, onClose, isAdmin = false }:
   const [memberActivity, setMemberActivity] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Advance Pool Edit states
-  const [showAdvanceEdit, setShowAdvanceEdit] = useState(false);
-  const [newAdvanceBalance, setNewAdvanceBalance] = useState<number | string>(0);
-  const [advanceAdminPass, setAdvanceAdminPass] = useState("");
-  const [isUpdatingAdvance, setIsUpdatingAdvance] = useState(false);
-  const [advanceUpdateError, setAdvanceUpdateError] = useState("");
+
 
   // Timeline Deletion states
   const [isTimelineEditMode, setIsTimelineEditMode] = useState(false);
@@ -65,39 +59,7 @@ export default function MemberHistoryModal({ userId, onClose, isAdmin = false }:
     if (userId) fetchActivity();
   }, [userId]);
 
-  const handleUpdateAdvancePool = async () => {
-    if (!advanceAdminPass) {
-      setAdvanceUpdateError("Administrator password required");
-      return;
-    }
-    setIsUpdatingAdvance(true);
-    setAdvanceUpdateError("");
-    
-    try {
-      const currentUser = session?.user as any;
-      const res = await updateUserAdvanceBalance(
-        memberActivity.user._id,
-        Number(newAdvanceBalance),
-        currentUser.id,
-        advanceAdminPass
-      );
-      if (res.success) {
-        toast.success("Advance pool updated securely");
-        setShowAdvanceEdit(false);
-        setAdvanceAdminPass("");
-        
-        // Refresh member report
-        const refresh = await getMemberActivity(userId);
-        if (refresh.success) setMemberActivity(refresh.data);
-      } else {
-        setAdvanceUpdateError(res.error || "Failed to update advance balance");
-      }
-    } catch (err: any) {
-      setAdvanceUpdateError(err.message);
-    } finally {
-      setIsUpdatingAdvance(false);
-    }
-  };
+
 
   const handleDeleteTimelineEvents = async () => {
     if (!confirm("Are you sure you want to delete the selected timeline events? This action is permanent and cannot be undone.")) return;
@@ -197,19 +159,6 @@ export default function MemberHistoryModal({ userId, onClose, isAdmin = false }:
                 </div>
                 <div className="text-xl font-black text-white tracking-tight">{stat.val}</div>
                 
-                {stat.label === "Advance Pool" && isAdmin && (
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setNewAdvanceBalance(memberActivity?.stats?.currentAdvanceBalance || 0);
-                      setShowAdvanceEdit(true);
-                    }}
-                    className="absolute top-4 right-4 p-1.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl text-indigo-400 opacity-0 group-hover:opacity-100 transition-all active:scale-95"
-                    title="Modify Advance Pool"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" />
-                  </button>
-                )}
              </div>
            ))}
         </div>
@@ -395,87 +344,7 @@ export default function MemberHistoryModal({ userId, onClose, isAdmin = false }:
           )}
         </div>
 
-        {/* Advance Pool Secure Edit Overlay */}
-        <AnimatePresence>
-          {showAdvanceEdit && (
-            <motion.div 
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="absolute inset-0 z-[120] bg-[#020617]/95 backdrop-blur-xl flex items-center justify-center p-8"
-            >
-              <div className="w-full max-w-md space-y-8 text-center bg-slate-950 border border-white/10 p-8 rounded-[40px] shadow-[0_0_50px_rgba(0,0,0,0.5)] ring-1 ring-white/5">
-                 <div className="inline-flex p-6 bg-indigo-500/10 rounded-[32px] border border-indigo-500/20 mb-2">
-                    <Wallet className="w-10 h-10 text-indigo-500" />
-                 </div>
-                 
-                 <div className="space-y-2">
-                    <h3 className="text-xl font-black text-white uppercase tracking-tight">Modify Advance Pool</h3>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest leading-relaxed">
-                      Modifying the advance pool directly requires administrator authorization.
-                    </p>
-                 </div>
 
-                 <div className="space-y-4 pt-4 text-left">
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-black text-indigo-400 uppercase tracking-widest ml-1">New Balance (Rs)</label>
-                      <input
-                        type="number"
-                        value={newAdvanceBalance}
-                        onChange={(e) => setNewAdvanceBalance(e.target.value)}
-                        className="w-full bg-slate-900 border border-white/10 rounded-2xl px-5 py-4 text-white focus:border-indigo-500/50 outline-none transition-all font-mono font-black text-xl text-center"
-                      />
-                    </div>
-                    <div className="relative group mt-4">
-                       <Lock className="absolute left-5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-600 group-focus-within:text-indigo-500 transition-colors" />
-                       <input
-                         type="password"
-                         placeholder="Administrator Password"
-                         value={advanceAdminPass}
-                         onChange={(e) => setAdvanceAdminPass(e.target.value)}
-                         className="w-full bg-slate-900 border border-white/10 rounded-2xl pl-14 pr-5 py-4 text-white focus:border-indigo-500/50 outline-none transition-all font-mono tracking-[0.3em]"
-                       />
-                    </div>
-
-                    {advanceUpdateError && (
-                      <div className="p-3 bg-rose-500/10 border border-rose-500/20 text-rose-500 text-[10px] font-black uppercase tracking-widest rounded-xl flex items-center justify-center gap-2">
-                         <AlertCircle className="w-3.5 h-3.5" />
-                         {advanceUpdateError}
-                      </div>
-                    )}
-
-                    <div className="flex flex-col gap-3 pt-4">
-                       <button
-                         onClick={handleUpdateAdvancePool}
-                         disabled={isUpdatingAdvance}
-                         className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] shadow-2xl shadow-indigo-600/30 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
-                       >
-                          {isUpdatingAdvance ? (
-                            <Loader2 className="w-4 h-4 animate-spin" />
-                          ) : (
-                            <>
-                              <ShieldCheck className="w-4 h-4" />
-                              Authorize Update
-                            </>
-                          )}
-                       </button>
-                       <button
-                         onClick={() => {
-                           setShowAdvanceEdit(false);
-                           setAdvanceAdminPass("");
-                           setAdvanceUpdateError("");
-                         }}
-                         disabled={isUpdatingAdvance}
-                         className="w-full py-4 text-[10px] font-black text-slate-500 hover:text-white uppercase tracking-[0.4em] transition-all"
-                       >
-                          Cancel Operation
-                       </button>
-                    </div>
-                 </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </motion.div>
     </div>
   );

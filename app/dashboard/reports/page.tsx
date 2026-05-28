@@ -49,6 +49,7 @@ export default function ReportsPage() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewType, setPreviewType] = useState<"financial" | "deposit" | "loan" | null>(null);
   const [previewData, setPreviewData] = useState<any>(null);
+  const [autoDownload, setAutoDownload] = useState(false);
 
   const current = getCurrentNepaliDate();
   const [targetMonth, setTargetMonth] = useState(current.monthName);
@@ -122,6 +123,34 @@ export default function ReportsPage() {
   useEffect(() => {
     fetchData();
   }, [orgId, targetMonth, targetYear]);
+
+  useEffect(() => {
+    if (showPreviewModal && previewType === "deposit" && autoDownload && previewData) {
+      const runAutoDownload = async () => {
+        // Wait 600ms for DOM mounting and rendering to finish completely
+        await new Promise((resolve) => setTimeout(resolve, 600));
+        
+        // Find the element
+        const element = document.getElementById("deposit-report-section");
+        if (element) {
+          try {
+            await generateDepositReport(previewData);
+          } catch (e) {
+            console.error("Auto-download failed:", e);
+          } finally {
+            setAutoDownload(false);
+            setShowPreviewModal(false);
+            setGenerating(null);
+          }
+        } else {
+          setAutoDownload(false);
+          setShowPreviewModal(false);
+          setGenerating(null);
+        }
+      };
+      runAutoDownload();
+    }
+  }, [showPreviewModal, previewType, autoDownload, previewData]);
 
   const handlePrevMonth = () => {
     const mIdx = NEPALI_MONTHS.indexOf(targetMonth);
@@ -223,19 +252,68 @@ export default function ReportsPage() {
           limit: 1000
         });
         if (res.success) {
+          let currentUsers = users;
+          if (!currentUsers || currentUsers.length === 0) {
+            const uRes = await getUsersByOrg(orgId);
+            if (uRes.success) {
+              currentUsers = uRes.data;
+            }
+          }
+
+          // Active general members
+          const activeUsers = currentUsers.filter(
+            (u: any) => u.role === "USER" && u.isActive === true
+          );
+
+          // Find IDs of users who deposited successfully (APPROVED or PENDING)
+          const depositedUserIds = new Set(
+            res.data
+              .filter((d: any) => d.status === "APPROVED" || d.status === "PENDING")
+              .map((d: any) => d.userId?._id?.toString() || d.userId?.toString())
+          );
+
+          const approvedAndPending = res.data.filter(
+            (d: any) => d.status === "APPROVED" || d.status === "PENDING"
+          );
+
+          const rejectedItems = res.data
+            .filter((d: any) => d.status === "REJECTED")
+            .map((d: any) => ({
+              memberName: d.userId?.name || "Unknown",
+              accountNumber: d.userId?.accountNumber || "N/A",
+              profileImage: d.userId?.profileImage || null,
+              amount: d.amount,
+              fine: d.delayedFinePaid || 0,
+              type: d.type || "SAVINGS",
+              date: new Date(d.depositDate || d.createdAt || new Date()).toLocaleDateString(),
+              status: d.status,
+              rejectionReason: d.rejectionReason || d.remarks || "No reason provided"
+            }));
+
+          const notDepositedMembers = activeUsers
+            .filter((u: any) => !depositedUserIds.has(u._id.toString()))
+            .map((u: any) => ({
+              memberName: u.name,
+              accountNumber: u.accountNumber || "N/A",
+              profileImage: u.profileImage || null
+            }));
+
           setPreviewData({
             orgName: currentStats?.officialName || orgName,
             month: m,
             year: y,
-            items: res.data.map((d: any) => ({
-              memberName: d.userId.name,
-              accountNumber: d.userId.accountNumber || "N/A",
+            items: approvedAndPending.map((d: any) => ({
+              memberName: d.userId?.name || "Unknown",
+              accountNumber: d.userId?.accountNumber || "N/A",
+              profileImage: d.userId?.profileImage || null,
               amount: d.amount,
               fine: d.delayedFinePaid || 0,
               type: d.type || "SAVINGS",
-              date: new Date(d.date).toLocaleDateString(),
+              date: new Date(d.depositDate || d.createdAt || new Date()).toLocaleDateString(),
               status: d.status
             })),
+            rejectedItems,
+            notDepositedMembers,
             timestamp: new Date().toLocaleString(),
             bankDetails: currentStats?.bankDetails
           });
@@ -479,12 +557,14 @@ export default function ReportsPage() {
                       setGenerating(report.id);
                       if (report.id === 'financial') {
                         await (report as any).action(financialMonth, financialYear);
+                        setGenerating(null);
                       } else if (report.id === 'deposit') {
+                        setAutoDownload(true);
                         await (report as any).action(depositMonth, depositYear);
                       } else {
                         await report.action();
+                        setGenerating(null);
                       }
-                      setGenerating(null);
                     }}
                     disabled={!!generating}
                     className="flex items-center justify-center px-8 py-4 bg-slate-800 hover:bg-emerald-600 text-white rounded-2xl transition-all font-black text-[10px] uppercase tracking-widest shadow-2xl active:scale-95 group/btn border border-white/5 hover:border-emerald-400 disabled:opacity-50 disabled:scale-100"
@@ -554,12 +634,12 @@ export default function ReportsPage() {
               </div>
               <div className="flex items-center gap-3">
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     if (previewType === "financial") {
                       const reportData = getFormattedReportData();
-                      if (reportData) generateFinancialReport(reportData);
+                      if (reportData) await generateFinancialReport(reportData);
                     } else if (previewType === "deposit") {
-                      generateDepositReport(previewData);
+                      await generateDepositReport(previewData);
                     } else if (previewType === "loan") {
                       generateLoanReport(previewData);
                     }

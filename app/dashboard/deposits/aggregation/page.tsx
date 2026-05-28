@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import {
   PiggyBank,
   Search,
@@ -25,7 +26,8 @@ import {
   Plus,
   Trash2,
   Edit3,
-  Calendar as CalendarIcon
+  Calendar as CalendarIcon,
+  User as UserIcon
 } from "lucide-react";
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -33,6 +35,7 @@ import 'jspdf-autotable';
 import toast from "react-hot-toast";
 import PageHeader from "@/components/dashboard/PageHeader";
 import RevenueAggregationForm from "@/components/dashboard/RevenueAggregationForm";
+import TransferCreditModal from "@/components/dashboard/TransferCreditModal";
 import {
   getAggregations,
   deleteAggregation
@@ -53,6 +56,7 @@ export default function AggregationPage() {
   const [lifetimeStats, setLifetimeStats] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editingDeposit, setEditingDeposit] = useState<any>(null);
+  const [transferringAgg, setTransferringAgg] = useState<any>(null);
 
   // Filters
   const [search, setSearch] = useState("");
@@ -191,8 +195,8 @@ export default function AggregationPage() {
           <button
             onClick={() => { setFilterMonth("all"); setPage(1); }}
             className={`px-6 py-2 text-[10px] font-black uppercase tracking-widest rounded-2xl border transition-all ${filterMonth === "all"
-                ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/5"
-                : "bg-slate-950 border-slate-800 text-slate-500 hover:text-white hover:bg-white/5"
+              ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 shadow-lg shadow-emerald-500/5"
+              : "bg-slate-950 border-slate-800 text-slate-500 hover:text-white hover:bg-white/5"
               }`}
           >
             All Transactions
@@ -331,16 +335,41 @@ export default function AggregationPage() {
                 deposits.map((d) => (
                   <tr key={d._id} className="group hover:bg-white/[0.02] transition-colors">
                     <td className="py-6 px-8">
-                      <div className="flex items-center gap-3">
-                        <div className={`w-2 h-2 rounded-full ${d.type === 'NAV' ? 'bg-emerald-500' : 'bg-blue-500'}`} />
-                        <span className="text-[11px] font-black text-white uppercase tracking-wider">{d.type}</span>
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-2 h-2 rounded-full ${d.type === 'NAV' ? 'bg-emerald-500' :
+                              d.type === 'ADVANCE' ? 'bg-indigo-500' :
+                                'bg-blue-500'
+                            }`} />
+                          <span className="text-[11px] font-black text-white uppercase tracking-wider">{d.type}</span>
+                        </div>
+                        {d.type === 'ADVANCE' && d.memberId && (
+                          <div className="flex items-center gap-2 mt-1.5 pl-5">
+                            <div className="w-5 h-5 rounded-full bg-white/5 border border-white/10 flex items-center justify-center overflow-hidden shrink-0 relative">
+                              {d.memberId.profileImage ? (
+                                <Image
+                                  src={d.memberId.profileImage}
+                                  alt={d.memberId.name}
+                                  fill
+                                  sizes="20px"
+                                  className="object-cover"
+                                />
+                              ) : (
+                                <UserIcon className="w-2.5 h-2.5 text-slate-500" />
+                              )}
+                            </div>
+                            <span className="text-[9px] font-bold text-slate-500 uppercase tracking-tight">
+                              For: {d.memberId.name || "Unknown"} ({d.memberId.accountNumber || "—"})
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </td>
                     <td className="py-6 px-8">
                       <div className="flex flex-col gap-1">
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">AD: {new Date(d.date).toLocaleDateString()}</span>
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tight">{new Date(d.date).toLocaleDateString()}</span>
                         <span className="text-[9px] font-black text-blue-500 uppercase tracking-widest">
-                          BS: {adToBs(new Date(d.date)).year}-{adToBs(new Date(d.date)).month}-{adToBs(new Date(d.date)).day}
+                          {adToBs(new Date(d.date)).year}-{adToBs(new Date(d.date)).month}-{adToBs(new Date(d.date)).day}
                         </span>
                       </div>
                     </td>
@@ -351,7 +380,10 @@ export default function AggregationPage() {
                       </div>
                     </td>
                     <td className="py-6 px-8 text-right">
-                      <span className={`text-[13px] font-black ${d.type === 'NAV' ? 'text-emerald-400' : 'text-blue-400'} tracking-tight`}>
+                      <span className={`text-[13px] font-black ${d.type === 'NAV' ? 'text-emerald-400' :
+                          d.type === 'ADVANCE' ? 'text-indigo-400' :
+                            'text-blue-400'
+                        } tracking-tight`}>
                         Rs. {d.amount.toLocaleString('en-IN')}
                       </span>
                     </td>
@@ -360,6 +392,15 @@ export default function AggregationPage() {
                     </td>
                     <td className="py-6 px-8 text-center">
                       <div className="flex items-center justify-center gap-3">
+                        {isAdmin && d.type === 'ADVANCE' && d.memberId && (d.memberId.advanceBalance || 0) > 0 && (
+                          <button
+                            onClick={() => setTransferringAgg(d)}
+                            className="px-3 py-1.5 bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 rounded-lg hover:bg-indigo-600 hover:text-white transition-all shadow-lg text-[10px] font-black uppercase tracking-wider active:scale-90"
+                            title="Transfer Credit"
+                          >
+                            Transfer Credit
+                          </button>
+                        )}
                         <button
                           onClick={() => { setEditingDeposit(d); setShowAddForm(true); }}
                           className="w-8 h-8 flex items-center justify-center bg-blue-500/10 text-blue-500 rounded-lg hover:bg-blue-500 hover:text-white transition-all shadow-lg shadow-blue-500/5 active:scale-90"
@@ -441,6 +482,21 @@ export default function AggregationPage() {
             orgConfig={{
               financials: stats?.financials,
               config: stats?.config
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {transferringAgg && (
+          <TransferCreditModal
+            aggregation={transferringAgg}
+            adminId={currentUser?.id}
+            orgId={orgId}
+            onClose={() => setTransferringAgg(null)}
+            onSuccess={() => {
+              setTransferringAgg(null);
+              loadData();
             }}
           />
         )}

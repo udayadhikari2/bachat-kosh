@@ -12,7 +12,7 @@ import { calculateLoanStats } from "@/lib/utils/loan-calculations";
 import BankLedger from "@/lib/models/BankLedger";
 import Aggregation from "@/lib/models/Aggregation";
 import { parseNepaliMonth, bsToAd, getDaysInMonth, adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
-import { getBankLedger } from "@/lib/actions/bank-ledger";
+import { getBankLedger, reconcileMonthlyTotals } from "@/lib/actions/bank-ledger";
 
 
 export async function getLoans(params: {
@@ -301,6 +301,12 @@ export async function createLoanRequest(data: {
       await Notification.insertMany(notifications);
     }
 
+    if (initialStatus === "ACTIVE" && activatedAtDate) {
+      const bsDate = adToBs(activatedAtDate);
+      const monthStr = `${NEPALI_MONTHS[bsDate.month - 1]} ${bsDate.year}`;
+      await reconcileMonthlyTotals(data.organizationId, monthStr).catch(console.error);
+    }
+
     revalidatePath("/dashboard/loans");
     return { success: true, data: JSON.parse(JSON.stringify(newLoan)) };
   } catch (error: any) {
@@ -390,6 +396,10 @@ export async function verifyLoan(loanId: string, adminId: string, recordOutflow:
       type: "SUCCESS",
       isRead: false
     });
+
+    const bsDate = adToBs(now);
+    const monthStr = `${NEPALI_MONTHS[bsDate.month - 1]} ${bsDate.year}`;
+    await reconcileMonthlyTotals(loan.organizationId.toString(), monthStr).catch(console.error);
 
     revalidatePath("/dashboard/loans");
     return { success: true };
@@ -604,6 +614,10 @@ export async function settleLoan(params: {
       isRead: false,
     });
 
+    const bsDate = adToBs(paymentDate);
+    const monthStr = `${NEPALI_MONTHS[bsDate.month - 1]} ${bsDate.year}`;
+    await reconcileMonthlyTotals(loan.organizationId.toString(), monthStr).catch(console.error);
+
     revalidatePath("/dashboard/loans");
     return { success: true, isFullySettled };
   } catch (error: any) {
@@ -718,6 +732,10 @@ export async function undoLastSettlement(params: {
       isRead: false,
     });
 
+    const bsDate = adToBs(latestDate);
+    const monthStr = `${NEPALI_MONTHS[bsDate.month - 1]} ${bsDate.year}`;
+    await reconcileMonthlyTotals(loan.organizationId.toString(), monthStr).catch(console.error);
+
     revalidatePath("/dashboard/loans");
     return { success: true };
   } catch (error: any) {
@@ -782,6 +800,30 @@ export async function deleteLoans(params: {
       if (notifications.length) await Notification.insertMany(notifications);
     }
 
+    const monthsToReconcile = new Set<string>();
+    for (const loan of loans) {
+      if (["ACTIVE", "COMPLETED", "OVERDUE"].includes(loan.status)) {
+        if (loan.activatedAt) {
+          const bsDate = adToBs(loan.activatedAt);
+          monthsToReconcile.add(`${NEPALI_MONTHS[bsDate.month - 1]} ${bsDate.year}`);
+        }
+        if (loan.payments) {
+          for (const p of loan.payments) {
+            if (p.verified && p.date) {
+              const bsDate = adToBs(p.date);
+              monthsToReconcile.add(`${NEPALI_MONTHS[bsDate.month - 1]} ${bsDate.year}`);
+            }
+          }
+        }
+      }
+    }
+    const orgId = loans[0]?.organizationId?.toString();
+    if (orgId) {
+      for (const m of monthsToReconcile) {
+        await reconcileMonthlyTotals(orgId, m).catch(console.error);
+      }
+    }
+
     revalidatePath("/dashboard/loans");
 
     let message = "";
@@ -806,6 +848,12 @@ export async function clearLoanHistory(organizationId: string, adminId: string) 
       organizationId: new mongoose.Types.ObjectId(organizationId),
       status: { $in: ["COMPLETED", "DELETED"] }
     });
+
+    const org = await Organization.findById(organizationId);
+    if (org && org.financials && org.financials.initialOpeningMonth) {
+      const baselineMonthStr = `${org.financials.initialOpeningMonth} ${org.financials.initialOpeningYear}`;
+      await reconcileMonthlyTotals(organizationId, baselineMonthStr).catch(console.error);
+    }
 
     revalidatePath("/dashboard/loans");
     return { success: true, count: result.deletedCount };

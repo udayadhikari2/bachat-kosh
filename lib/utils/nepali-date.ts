@@ -110,3 +110,12 @@ export function getNepaliYearRange(startYear: number, endOffset: number = 3) {
   }
   return years;
 }
+
+export function compareNepaliMonths(m1: string, m2: string): number {
+  const p1 = parseNepaliMonth(m1);
+  const p2 = parseNepaliMonth(m2);
+  if (p1.year !== p2.year) {
+    return p1.year - p2.year;
+  }
+  return p1.month - p2.month;
+}

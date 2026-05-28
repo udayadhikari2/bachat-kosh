@@ -211,6 +211,15 @@ export async function updateDeposit(id: string, data: any) {
       isModified: true
     });
 
+    const updated = await Deposit.findById(id);
+    if (updated && (existing.status === "APPROVED" || updated.status === "APPROVED")) {
+      const monthsToReconcile = new Set<string>([existing.month]);
+      if (updated.month) monthsToReconcile.add(updated.month);
+      for (const m of monthsToReconcile) {
+        await reconcileMonthlyTotals(existing.organizationId.toString(), m).catch(console.error);
+      }
+    }
+
     revalidatePath("/dashboard/users");
     revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
@@ -320,6 +329,10 @@ export async function createDeposit(data: {
       isRead: false
     });
 
+    if (newDeposit.status === "APPROVED") {
+      await reconcileMonthlyTotals(data.organizationId, data.month).catch(console.error);
+    }
+
     revalidatePath("/dashboard/users");
     revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
@@ -349,6 +362,7 @@ export async function createMultipleDeposits(payloads: Array<{
 
     let successCount = 0;
     const errors: any[] = [];
+    const approvedMonths = new Set<string>();
 
     // We process sequentially to ensure proper calculations and avoid race conditions,
     // especially with the organization config and user states if they overlap.
@@ -416,6 +430,10 @@ export async function createMultipleDeposits(payloads: Array<{
           creditUsed: data.creditUsed || 0,
         });
 
+        if (newDeposit.status === "APPROVED") {
+          approvedMonths.add(data.month);
+        }
+
         await Notification.create({
           senderId: data.userId,
           recipientId: data.organizationId,
@@ -428,6 +446,12 @@ export async function createMultipleDeposits(payloads: Array<{
         successCount++;
       } catch (err: any) {
         errors.push({ userId: data.userId, error: err.message });
+      }
+    }
+
+    if (payloads.length > 0 && approvedMonths.size > 0) {
+      for (const m of approvedMonths) {
+        await reconcileMonthlyTotals(payloads[0].organizationId, m).catch(console.error);
       }
     }
 
@@ -505,6 +529,16 @@ export async function processDeposits(
     }
 
     await Notification.insertMany(notifications);
+
+    const monthsToReconcile = new Set<string>();
+    for (const dep of deposits) {
+      monthsToReconcile.add(dep.month);
+    }
+    if (deposits.length > 0) {
+      for (const m of monthsToReconcile) {
+        await reconcileMonthlyTotals(deposits[0].organizationId.toString(), m).catch(console.error);
+      }
+    }
 
     revalidatePath("/dashboard/users");
     revalidatePath("/dashboard/loans");
@@ -804,7 +838,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       ]),
       // 5. Detailed Advance Inflow Logs (Selected Month)
       Deposit.find({ ...matchQuery, advancedPayment: { $gt: 0 } })
-        .populate("userId", "name accountNumber")
+        .populate("userId", "name accountNumber profileImage")
         .sort({ depositDate: -1 })
         .lean(),
       Loan.find({
@@ -812,18 +846,18 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
         "payments.type": "ADVANCE",
         ...(isAllTime ? {} : { "payments.date": loanMatchQuery["payments.date"] })
       })
-        .populate("userId", "name accountNumber")
+        .populate("userId", "name accountNumber profileImage")
         .lean(),
       Aggregation.find({ ...matchQuery, type: "ADVANCE" })
-        .populate("memberId", "name accountNumber")
+        .populate("memberId", "name accountNumber profileImage")
         .sort({ date: -1 })
         .lean(),
       Deposit.find({ ...matchQuery, creditUsed: { $gt: 0 } })
-        .populate("userId", "name accountNumber")
+        .populate("userId", "name accountNumber profileImage")
         .sort({ depositDate: -1 })
         .lean(),
       User.find({ organizationId: targetIdObj, advanceBalance: { $gt: 0 } })
-        .select("name accountNumber advanceBalance")
+        .select("name accountNumber advanceBalance profileImage")
         .lean()
     ]);
 
@@ -970,6 +1004,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       advanceInflowLogs.push({
         memberName: d.userId?.name || "Unknown",
         accountNo: d.userId?.accountNumber || "N/A",
+        profileImage: d.userId?.profileImage,
         date: d.depositDate,
         amount: d.advancedPayment,
         source: isManualAgg ? "Manual Aggregation" : (d.depositType === "ADVANCE" ? "Direct Advance" : "Deposit Overpayment"),
@@ -983,6 +1018,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
           advanceInflowLogs.push({
             memberName: l.userId?.name || "Unknown",
             accountNo: l.userId?.accountNumber || "N/A",
+            profileImage: l.userId?.profileImage,
             date: p.date,
             amount: p.amount,
             source: "Loan Settlement",
@@ -1034,12 +1070,13 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       .filter(([_, val]) => (val.inflow - val.usage) > 0.01)
       .map(([id]) => id);
 
-    const activeUsers = await User.find({ _id: { $in: activeMemberIds } }).select("name accountNumber").lean();
+    const activeUsers = await User.find({ _id: { $in: activeMemberIds } }).select("name accountNumber profileImage").lean();
     const outstandingCredits = activeUsers.map(u => {
       const bal = memberMap.get(u._id.toString());
       return {
         memberName: u.name,
         accountNo: u.accountNumber,
+        profileImage: u.profileImage,
         amount: (bal?.inflow || 0) - (bal?.usage || 0),
         isOutstanding: true
       };
@@ -1053,7 +1090,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       const repaymentLoans = await Loan.find({
         organizationId: targetIdObj,
         "payments.date": loanMatchQuery["payments.date"]
-      }).populate("userId", "name accountNumber").lean();
+      }).populate("userId", "name accountNumber profileImage").lean();
 
       repaymentLoans.forEach((loan: any) => {
         loan.payments.forEach((p: any) => {
@@ -1062,6 +1099,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
             principalRepaymentLogs.push({
               memberName: loan.userId?.name || "Unknown",
               accountNo: loan.userId?.accountNumber || "N/A",
+              profileImage: loan.userId?.profileImage,
               date: p.date,
               amount: p.amount,
               loanId: loan._id.toString()
@@ -1078,6 +1116,7 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
       advanceUsageLogs.push({
         memberName: u.userId?.name || "Unknown",
         accountNo: u.userId?.accountNumber || "N/A",
+        profileImage: u.userId?.profileImage,
         date: u.depositDate,
         amount: u.creditUsed,
         source: u.depositType ? `Used for ${u.depositType.toLowerCase().replace('_', ' ')}` : "Used for Payment",
@@ -1239,6 +1278,18 @@ export async function deleteDeposits(ids: string[]) {
     await Deposit.deleteMany({ _id: { $in: ids } });
     await Notification.deleteMany({ relatedId: { $in: ids } });
 
+    const monthsToReconcile = new Set<string>();
+    for (const dep of deposits) {
+      if (dep.status === "APPROVED") {
+        monthsToReconcile.add(dep.month);
+      }
+    }
+    if (deposits.length > 0) {
+      for (const m of monthsToReconcile) {
+        await reconcileMonthlyTotals(deposits[0].organizationId.toString(), m).catch(console.error);
+      }
+    }
+
     revalidatePath("/dashboard/users");
     revalidatePath("/dashboard/loans");
     revalidatePath("/dashboard/deposits");
@@ -1282,6 +1333,10 @@ export async function deleteDeposit(depositId: string, orgId: string) {
     });
     if (result) {
       await Notification.deleteMany({ relatedId: depositId });
+    }
+
+    if (dep && dep.status === "APPROVED") {
+      await reconcileMonthlyTotals(orgId, dep.month).catch(console.error);
     }
 
     revalidatePath("/dashboard/users");

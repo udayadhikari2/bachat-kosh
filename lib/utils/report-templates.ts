@@ -3,6 +3,42 @@ import autoTable from 'jspdf-autotable';
 import * as XLSX from 'xlsx';
 import { getOfficialBankName } from './export-utils';
 
+const toBase64Image = async (url: string | null | undefined): Promise<string | null> => {
+  if (!url) return null;
+  if (url.startsWith('data:')) return url;
+  try {
+    const res = await fetch(url, { method: 'GET', credentials: 'omit' });
+    if (!res.ok) return null;
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.onerror = () => resolve(null);
+      reader.readAsDataURL(blob);
+    });
+  } catch (err) {
+    console.error("Failed to convert image to base64:", err);
+    return null;
+  }
+};
+
+const getInitials = (name: string): string => {
+  if (!name) return "";
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
+  return (parts[0].charAt(0) + parts[parts.length - 1].charAt(0)).toUpperCase();
+};
+
+const drawInitials = (doc: jsPDF, name: string, x: number, y: number, bgColor: [number, number, number], textColor: [number, number, number], cx: number = 5, radius: number = 2.2) => {
+  const initials = getInitials(name);
+  doc.setFillColor(...bgColor);
+  doc.circle(x + cx, y, radius, 'F');
+  doc.setFontSize(5);
+  doc.setTextColor(...textColor);
+  doc.setFont('helvetica', 'bold');
+  doc.text(initials, x + cx, y + 0.7, { align: 'center' });
+};
+
 export interface FinancialReportData {
   orgName: string;
   bankDetails?: {
@@ -35,11 +71,13 @@ export interface FinancialReportData {
 export interface DepositReportItem {
   memberName: string;
   accountNumber: string;
+  profileImage?: string | null;
   date: string;
   type: string;
   amount: number;
   fine: number;
   status: string;
+  rejectionReason?: string | null;
 }
 
 export interface DepositReportData {
@@ -47,6 +85,12 @@ export interface DepositReportData {
   month: string;
   year: number;
   items: DepositReportItem[];
+  rejectedItems?: DepositReportItem[];
+  notDepositedMembers?: {
+    memberName: string;
+    accountNumber: string;
+    profileImage?: string | null;
+  }[];
   timestamp: string;
   bankDetails?: {
     accountNo: string;
@@ -93,7 +137,7 @@ export interface MemberReportData {
   timestamp: string;
 }
 
-export const generateFinancialReport = (data: FinancialReportData) => {
+export const generateFinancialReport = async (data: FinancialReportData) => {
   const doc = new jsPDF();
   const {
     orgName,
@@ -110,6 +154,20 @@ export const generateFinancialReport = (data: FinancialReportData) => {
     healthData,
     usersCount
   } = data;
+
+  const principalLogs = stats?.principalRepaymentLogs || [];
+  const advanceLogs = stats?.advanceInflowLogs || [];
+
+  const [principalWithImages, advanceWithImages] = await Promise.all([
+    Promise.all(principalLogs.map(async (log: any) => ({
+      ...log,
+      base64Avatar: await toBase64Image(log.profileImage)
+    }))),
+    Promise.all(advanceLogs.map(async (log: any) => ({
+      ...log,
+      base64Avatar: await toBase64Image(log.profileImage)
+    })))
+  ]);
 
   const monthlyInflow = stats?.grandTotalCollection || 0;
   const isBaseline = targetMonth === lifetimeStats?.financials?.initialOpeningMonth && Number(targetYear) === Number(lifetimeStats?.financials?.initialOpeningYear);
@@ -244,7 +302,7 @@ export const generateFinancialReport = (data: FinancialReportData) => {
     `Rs. ${(stats?.upto?.totalLoanRepaid || 0).toLocaleString('en-IN')}`,
     `Rs. ${(lifetimeStats?.totalLoanRepaid || 0).toLocaleString('en-IN')}`
   ]);
-  
+
   revenueTableRows.push([
     'Advanced Credit (Inflow)',
     `Rs. ${(stats?.totalAdvancedPayment || 0).toLocaleString('en-IN')}`,
@@ -265,16 +323,16 @@ export const generateFinancialReport = (data: FinancialReportData) => {
   const lifetimeInflow = lifetimeStats?.grandTotalCollection || 0;
 
   revenueTableRows.push([
-    { content: 'GRAND TOTAL COLLECTION', styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138] } },
-    { content: `Rs. ${monthlyInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138] } },
-    { content: `Rs. ${prevInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138] } },
-    { content: `Rs. ${uptoInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138] } },
-    { content: `Rs. ${lifetimeInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138] } }
+    { content: 'GRAND TOTAL COLLECTION', styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138], cellPadding: 8 } },
+    { content: `Rs. ${monthlyInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138], cellPadding: 8 } },
+    { content: `Rs. ${prevInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138], cellPadding: 8 } },
+    { content: `Rs. ${uptoInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138], cellPadding: 8 } },
+    { content: `Rs. ${lifetimeInflow.toLocaleString('en-IN')}`, styles: { fontStyle: 'bold', fillColor: [219, 234, 254], textColor: [30, 58, 138], cellPadding: 8 } }
   ]);
 
   autoTable(doc, {
     startY: nextY + 4,
-    head: [['Category', `Total (${targetMonth.slice(0,3)})`, 'Previous', `Upto (${targetMonth.slice(0,3)})`, 'Lifetime']],
+    head: [['Category', `Total (${targetMonth.slice(0, 3)})`, 'Previous', `Upto (${targetMonth.slice(0, 3)})`, 'Lifetime']],
     body: revenueTableRows,
     theme: 'striped',
     headStyles: {
@@ -284,7 +342,8 @@ export const generateFinancialReport = (data: FinancialReportData) => {
       fontStyle: 'bold'
     },
     bodyStyles: {
-      fontSize: 8
+      fontSize: 8,
+      cellPadding: 6
     },
     columnStyles: {
       0: { cellWidth: 55 },
@@ -378,15 +437,12 @@ export const generateFinancialReport = (data: FinancialReportData) => {
 
   let currentY = navY + 28;
 
-  const principalLogs = stats?.principalRepaymentLogs || [];
-  const advanceLogs = stats?.advanceInflowLogs || [];
-
   if (principalLogs.length > 0 || advanceLogs.length > 0) {
     if (currentY > 210) {
       doc.addPage();
       currentY = 20;
     }
-    
+
     doc.setFontSize(11);
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
@@ -394,15 +450,43 @@ export const generateFinancialReport = (data: FinancialReportData) => {
     currentY += 4;
 
     if (principalLogs.length > 0) {
-      const pLogRows = principalLogs.map((log: any) => [log.memberName, `Rs. ${log.amount.toLocaleString('en-IN')}`]);
+      const pLogRows = principalWithImages.map((log: any) => [
+        "", // Avatar (drawn in didDrawCell)
+        `${log.memberName}\n${log.accountNo || '—'}`,
+        `Rs. ${log.amount.toLocaleString('en-IN')}`
+      ]);
       autoTable(doc, {
         startY: currentY,
-        head: [['Member Name (Principal Repayments)', 'Amount Paid']],
+        head: [['', 'Member Details', 'Amount Paid']],
         body: pLogRows,
         theme: 'striped',
-        headStyles: { fillColor: [37, 99, 235] },
-        bodyStyles: { fontSize: 7.5 },
-        columnStyles: { 1: { halign: 'right' } }
+        headStyles: { fillColor: [37, 99, 235], fontSize: 8, cellPadding: 3 },
+        bodyStyles: { fontSize: 8, cellPadding: 3 },
+        columnStyles: {
+          0: { cellWidth: 12, halign: 'center' },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 35, halign: 'right' }
+        },
+        didDrawCell: (data) => {
+          if (data.section === 'body' && data.column.index === 0) {
+            const log = principalWithImages[data.row.index];
+            const x = data.cell.x;
+            const y = data.cell.y + data.cell.height / 2;
+            const r = 0.8;
+            if (log.base64Avatar) {
+              try {
+                doc.addImage(log.base64Avatar, 'JPEG', x + 3.5, y - 2.5, 5, 5);
+                doc.setDrawColor(226, 232, 240);
+                doc.setLineWidth(0.1);
+                (doc as any).roundedRect(x + 3.5, y - 2.5, 5, 5, r, r, 'S');
+              } catch (e) {
+                drawInitials(doc, log.memberName, x, y, [219, 234, 254], [30, 58, 138], 6, 2.2);
+              }
+            } else {
+              drawInitials(doc, log.memberName, x, y, [219, 234, 254], [30, 58, 138], 6, 2.2);
+            }
+          }
+        }
       });
       currentY = (doc as any).lastAutoTable.finalY + 6;
     }
@@ -412,16 +496,44 @@ export const generateFinancialReport = (data: FinancialReportData) => {
         doc.addPage();
         currentY = 20;
       }
-      
-      const advLogRows = advanceLogs.map((log: any) => [log.memberName, `Rs. ${log.amount.toLocaleString('en-IN')}`]);
+
+      const advLogRows = advanceWithImages.map((log: any) => [
+        "", // Avatar (drawn in didDrawCell)
+        `${log.memberName}\n${log.accountNo || '—'}`,
+        `Rs. ${log.amount.toLocaleString('en-IN')}`
+      ]);
       autoTable(doc, {
         startY: currentY,
-        head: [['Member Name (Advanced Credit Inflows)', 'Amount Credited']],
+        head: [['', 'Member Details', 'Amount Credited']],
         body: advLogRows,
         theme: 'striped',
-        headStyles: { fillColor: [217, 119, 6] },
-        bodyStyles: { fontSize: 7.5 },
-        columnStyles: { 1: { halign: 'right' } }
+        headStyles: { fillColor: [217, 119, 6], fontSize: 8, cellPadding: 3 },
+        bodyStyles: { fontSize: 8, cellPadding: 3 },
+        columnStyles: {
+          0: { cellWidth: 12, halign: 'center' },
+          1: { cellWidth: 'auto' },
+          2: { cellWidth: 35, halign: 'right' }
+        },
+        didDrawCell: (data) => {
+          if (data.section === 'body' && data.column.index === 0) {
+            const log = advanceWithImages[data.row.index];
+            const x = data.cell.x;
+            const y = data.cell.y + data.cell.height / 2;
+            const r = 0.8;
+            if (log.base64Avatar) {
+              try {
+                doc.addImage(log.base64Avatar, 'JPEG', x + 3.5, y - 2.5, 5, 5);
+                doc.setDrawColor(226, 232, 240);
+                doc.setLineWidth(0.1);
+                (doc as any).roundedRect(x + 3.5, y - 2.5, 5, 5, r, r, 'S');
+              } catch (e) {
+                drawInitials(doc, log.memberName, x, y, [254, 243, 199], [146, 64, 14], 6, 2.2);
+              }
+            } else {
+              drawInitials(doc, log.memberName, x, y, [254, 243, 199], [146, 64, 14], 6, 2.2);
+            }
+          }
+        }
       });
       currentY = (doc as any).lastAutoTable.finalY + 6;
     }
@@ -437,7 +549,7 @@ export const generateFinancialReport = (data: FinancialReportData) => {
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(15, 23, 42);
   doc.text('5. Audit Notes & Sign-Off', 14, currentY);
-  
+
   const notesText = [
     "1. This statement is a point-in-time reconstruction of the organization's financial state as of the end of the selected period.",
     "2. 'Historical Cash Collections' include all member deposits, interest, and fees collected up to the reporting date.",
@@ -473,28 +585,88 @@ export const generateFinancialReport = (data: FinancialReportData) => {
   doc.save(`${orgName}_Financial_Report_${targetMonth || 'All'}_${targetYear}.pdf`);
 };
 
-export const generateDepositReport = (data: DepositReportData) => {
+export const generateDepositReport = async (data: DepositReportData) => {
+  if (typeof window !== 'undefined') {
+    const element = document.getElementById("deposit-report-section");
+    if (element) {
+      try {
+        const html2canvas = (await import('html2canvas-pro')).default;
+        const canvas = await html2canvas(element, {
+          scale: 3, // High-quality 3x scaling for crisp PDF rendering
+          useCORS: true,
+          allowTaint: false,
+          backgroundColor: "#ffffff",
+          logging: false,
+        });
+
+        const imgData = canvas.toDataURL("image/jpeg", 1.0);
+        const pdf = new jsPDF("p", "mm", "a4");
+        const pdfWidth = 210;
+        const pdfHeight = 297;
+
+        const canvasWidth = canvas.width;
+        const canvasHeight = canvas.height;
+        const aspect = canvasHeight / canvasWidth;
+
+        let printWidth = pdfWidth;
+        let printHeight = pdfWidth * aspect;
+
+        // Scale to fit on a single A4 page
+        if (printHeight > pdfHeight) {
+          printHeight = pdfHeight;
+          printWidth = pdfHeight / aspect;
+        }
+
+        // Center on the page
+        const xOffset = (pdfWidth - printWidth) / 2;
+        const yOffset = (pdfHeight - printHeight) / 2;
+
+        pdf.addImage(imgData, "JPEG", xOffset, yOffset, printWidth, printHeight);
+        pdf.save(`${data.orgName}_Deposit_Report_${data.month}_${data.year}.pdf`);
+        return;
+      } catch (err) {
+        console.error("html2canvas PDF generation failed, falling back to manual layout:", err);
+      }
+    }
+  }
+
   const doc = new jsPDF();
-  const { orgName, month, year, items, timestamp, bankDetails } = data;
+  const { orgName, month, year, items, rejectedItems = [], notDepositedMembers = [], timestamp, bankDetails } = data;
+
+  // Preload all avatars in parallel
+  const [itemsWithImages, rejectedWithImages, unpaidWithImages] = await Promise.all([
+    Promise.all(items.map(async item => ({
+      ...item,
+      base64Avatar: await toBase64Image(item.profileImage)
+    }))),
+    Promise.all(rejectedItems.map(async item => ({
+      ...item,
+      base64Avatar: await toBase64Image(item.profileImage)
+    }))),
+    Promise.all(notDepositedMembers.map(async item => ({
+      ...item,
+      base64Avatar: await toBase64Image(item.profileImage)
+    })))
+  ]);
 
   // Header
-  doc.setFontSize(20);
+  doc.setFontSize(16);
   doc.setTextColor(34, 197, 94); // Green-500
-  doc.text(orgName, 105, 20, { align: 'center' });
-  
-  doc.setFontSize(14);
-  doc.setTextColor(100);
-  doc.text(`Monthly Deposit Audit Report - ${month} ${year}`, 105, 30, { align: 'center' });
-  
-  doc.setFontSize(8);
-  doc.text(`Generated on: ${timestamp}`, 105, 36, { align: 'center' });
+  doc.text(orgName, 105, 14, { align: 'center' });
+
+  doc.setFontSize(11);
+  doc.setTextColor(71, 85, 105); // Slate-600
+  doc.text(`Monthly Deposit Audit Report - ${month} ${year}`, 105, 22, { align: 'center' });
+
+  doc.setFontSize(7.5);
+  doc.text(`Generated on: ${timestamp}`, 105, 27, { align: 'center' });
 
   // Summary Stats
-  const totalApproved = items.filter(i => i.status === 'APPROVED').reduce((sum, i) => sum + i.amount, 0);
-  const totalFine = items.filter(i => i.status === 'APPROVED').reduce((sum, i) => sum + (i.fine || 0), 0);
+  const totalApproved = items.reduce((sum, i) => sum + i.amount, 0);
+  const totalFine = items.reduce((sum, i) => sum + (i.fine || 0), 0);
 
   autoTable(doc, {
-    startY: 42,
+    startY: 32,
     head: [['Total Verified Collection', 'Total Fines Collected', 'Total Transactions']],
     body: [[
       `Rs. ${totalApproved.toLocaleString('en-IN')}`,
@@ -502,72 +674,235 @@ export const generateDepositReport = (data: DepositReportData) => {
       items.length.toString()
     ]],
     theme: 'grid',
-    headStyles: { fillColor: [34, 197, 94] },
+    headStyles: { fillColor: [34, 197, 94], fontSize: 8, cellPadding: 2 },
+    bodyStyles: { fontSize: 8, cellPadding: 2 },
   });
 
-  // Main Table
-  const tableRows = items.map(item => [
-    item.memberName,
-    item.accountNumber,
+  // Sort all three lists alphabetically
+  const sortedItems = [...items].sort((a, b) => a.memberName.localeCompare(b.memberName));
+  const sortedRejected = [...rejectedItems].sort((a, b) => a.memberName.localeCompare(b.memberName));
+  const sortedUnpaid = [...notDepositedMembers].sort((a, b) => a.memberName.localeCompare(b.memberName));
+
+  // ─── Dynamic single-page scaling ─────────────────────────────────────────
+  // A4 = 297mm. Usable = 297 - 14(top) - 14(bottom) = 269mm
+  // Fixed overhead: header(13) + summary table(18) + gaps+labels(18) + notes+footer(16) = ~65mm
+  // Remaining budget for the 3 data tables:
+  const USABLE_HEIGHT = 269;
+  const FIXED_OVERHEAD = 65;
+  const tableBudget = USABLE_HEIGHT - FIXED_OVERHEAD; // ~204mm
+
+  // Estimate height of one data row at base settings (fontSize=7.5, cellPadding=1.4):
+  //   row height ≈ fontSize * 0.3528 (pt→mm) + 2 * cellPadding
+  //   7.5 * 0.3528 + 2*1.4 ≈ 5.45mm per row
+  const BASE_PAD = 1.4;
+  const BASE_FS  = 7.5;
+  const BASE_SIDE_FS  = 7.0;
+  const BASE_SIDE_PAD = 1.4;
+  const baseRowH      = BASE_FS * 0.3528 + 2 * BASE_PAD;
+  const baseSideRowH  = BASE_SIDE_FS * 0.3528 + 2 * BASE_SIDE_PAD;
+  // Each approved row spans full page width; side tables share the width in 2 columns
+  // The taller of the two side tables determines side height
+  const sideRows      = Math.max(sortedRejected.length, sortedUnpaid.length, 1);
+  const approvedRows  = Math.max(sortedItems.length, 1);
+  const neededHeight  = approvedRows * baseRowH + sideRows * baseSideRowH;
+
+  // Compute a uniform scale factor, clamped to [0.60, 1.0]
+  const scale = neededHeight > tableBudget
+    ? Math.max(0.60, tableBudget / neededHeight)
+    : 1.0;
+
+  const cellPad     = +(BASE_PAD     * scale).toFixed(2);
+  const fontSize    = +(BASE_FS      * scale).toFixed(1);
+  const sideCellPad = +(BASE_SIDE_PAD * scale).toFixed(2);
+  const sideFontSz  = +(BASE_SIDE_FS  * scale).toFixed(1);
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Approved Deposits Table  — merge name + A/C into one cell
+  const tableRows = sortedItems.map(item => [
+    "", // Avatar (drawn in didDrawCell)
+    `${item.memberName}\n${item.accountNumber}`,
     item.date,
     (item.type || 'SAVINGS').replace('_', ' '),
     `Rs. ${item.amount.toLocaleString('en-IN')}`,
-    `Rs. ${(item.fine || 0).toLocaleString('en-IN')}`,
-    item.status
+    `Rs. ${(item.fine || 0).toLocaleString('en-IN')}`
   ]);
 
+  let currentY = (doc as any).lastAutoTable.finalY + 8;
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(16, 185, 129); // Emerald-600
+  doc.text("1. APPROVED DEPOSITS", 14, currentY);
+
   autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 8,
-    head: [['Member Name', 'A/C No.', 'Date', 'Type', 'Amount', 'Fine', 'Status']],
+    startY: currentY + 3,
+    head: [['', 'Member', 'Date', 'Type', 'Amount', 'Fine']],
     body: tableRows,
     theme: 'striped',
-    headStyles: { fillColor: [51, 65, 85] }, // Slate-700
-    styles: { fontSize: 8 },
+    headStyles: { fillColor: [16, 185, 129], fontSize: fontSize, cellPadding: cellPad },
+    styles: { fontSize: fontSize, cellPadding: cellPad },
     columnStyles: {
-      4: { halign: 'right' },
-      5: { halign: 'right' },
+      0: { cellWidth: 10, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 22 },
+      3: { cellWidth: 16 },
+      4: { cellWidth: 22, halign: 'right' },
+      5: { cellWidth: 16, halign: 'right' }
+    },
+    didDrawCell: (data) => {
+      if (data.section === 'body' && data.column.index === 0) {
+        const item = itemsWithImages[data.row.index];
+        const x = data.cell.x;
+        const y = data.cell.y + data.cell.height / 2;
+        const r = 0.8; // corner radius ~3px
+        if (item.base64Avatar) {
+          try {
+            doc.addImage(item.base64Avatar, 'JPEG', x + 2.5, y - 2.5, 5, 5);
+            doc.setDrawColor(226, 232, 240);
+            doc.setLineWidth(0.1);
+            (doc as any).roundedRect(x + 2.5, y - 2.5, 5, 5, r, r, 'S');
+          } catch (e) {
+            drawInitials(doc, item.memberName, x, y, [219, 234, 254], [30, 58, 138]);
+          }
+        } else {
+          drawInitials(doc, item.memberName, x, y, [219, 234, 254], [30, 58, 138]);
+        }
+      }
     }
   });
 
-  const finalY = (doc as any).lastAutoTable.finalY + 12;
-  // Notes & Sign-offs
-  if (finalY > 250) {
-    doc.addPage();
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42);
-    doc.text('Audit Notes & Sign-Off', 14, 20);
-    
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    doc.text('This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.', 14, 28);
-  } else {
-    doc.setFontSize(10);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(15, 23, 42);
-    doc.text('Audit Notes & Sign-Off', 14, finalY);
-    
-    doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(71, 85, 105);
-    doc.text('This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.', 14, finalY + 8);
-  }
+  const bottomStartY = (doc as any).lastAutoTable.finalY + 8;
 
-  // Footer stamping
+  // Title for Rejected Deposits
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(225, 29, 72);
+  doc.text(`2. REJECTED DEPOSITS (${sortedRejected.length})`, 14, bottomStartY);
+
+  // Title for Unpaid Members
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(217, 119, 6);
+  doc.text(`3. UNPAID MEMBERS (${sortedUnpaid.length})`, 108, bottomStartY);
+
+  // 1. Rejected Deposits Table (Left Column)
+  // Rejected Deposits — sorted, name+account merged
+  const rejectedRows = sortedRejected.map(item => [
+    "",
+    `${item.memberName}\n${item.accountNumber}`,
+    `Rs. ${item.amount.toLocaleString('en-IN')}`,
+    item.rejectionReason || "No reason"
+  ]);
+
+  autoTable(doc, {
+    startY: bottomStartY + 3,
+    margin: { left: 14, right: 108 },
+    tableWidth: 88,
+    head: [['', 'Member', 'Amount', 'Rejection Message']],
+    body: rejectedRows.length > 0 ? rejectedRows : [['', 'No rejected deposits', '', '']],
+    theme: 'grid',
+    headStyles: { fillColor: [225, 29, 72], fontSize: sideFontSz, cellPadding: sideCellPad },
+    styles: { fontSize: sideFontSz, cellPadding: sideCellPad },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 20, halign: 'right' },
+      3: { cellWidth: 24 }
+    },
+    didDrawCell: (data) => {
+      if (sortedRejected.length > 0 && data.section === 'body' && data.column.index === 0) {
+        const item = rejectedWithImages[data.row.index];
+        const x = data.cell.x;
+        const y = data.cell.y + data.cell.height / 2;
+        const r = 0.7;
+        if (item.base64Avatar) {
+          try {
+            doc.addImage(item.base64Avatar, 'JPEG', x + 2, y - 2, 4, 4);
+            doc.setDrawColor(244, 63, 94);
+            doc.setLineWidth(0.1);
+            (doc as any).roundedRect(x + 2, y - 2, 4, 4, r, r, 'S');
+          } catch (e) {
+            drawInitials(doc, item.memberName, x, y, [254, 226, 226], [159, 18, 57], 4, 1.8);
+          }
+        } else {
+          drawInitials(doc, item.memberName, x, y, [254, 226, 226], [159, 18, 57], 4, 1.8);
+        }
+      }
+    }
+  });
+
+  const leftFinalY = (doc as any).lastAutoTable.finalY;
+
+  // Unpaid Members — sorted, name+account merged
+  const unpaidRows = sortedUnpaid.map(item => [
+    "",
+    `${item.memberName}\n${item.accountNumber}`,
+    "Unpaid"
+  ]);
+
+  autoTable(doc, {
+    startY: bottomStartY + 3,
+    margin: { left: 108, right: 14 },
+    tableWidth: 88,
+    head: [['', 'Member', 'Status']],
+    body: unpaidRows.length > 0 ? unpaidRows : [['', 'All active members deposited', '']],
+    theme: 'grid',
+    headStyles: { fillColor: [217, 119, 6], fontSize: sideFontSz, cellPadding: sideCellPad },
+    styles: { fontSize: sideFontSz, cellPadding: sideCellPad },
+    columnStyles: {
+      0: { cellWidth: 8, halign: 'center' },
+      1: { cellWidth: 'auto' },
+      2: { cellWidth: 16, halign: 'center' }
+    },
+    didDrawCell: (data) => {
+      if (sortedUnpaid.length > 0 && data.section === 'body' && data.column.index === 0) {
+        const item = unpaidWithImages[data.row.index];
+        const x = data.cell.x;
+        const y = data.cell.y + data.cell.height / 2;
+        const r = 0.7;
+        if (item.base64Avatar) {
+          try {
+            doc.addImage(item.base64Avatar, 'JPEG', x + 2, y - 2, 4, 4);
+            doc.setDrawColor(245, 158, 11);
+            doc.setLineWidth(0.1);
+            (doc as any).roundedRect(x + 2, y - 2, 4, 4, r, r, 'S');
+          } catch (e) {
+            drawInitials(doc, item.memberName, x, y, [254, 243, 199], [146, 64, 14], 4, 1.8);
+          }
+        } else {
+          drawInitials(doc, item.memberName, x, y, [254, 243, 199], [146, 64, 14], 4, 1.8);
+        }
+      }
+    }
+  });
+
+  const rightFinalY = (doc as any).lastAutoTable.finalY;
+  const finalY = Math.max(leftFinalY, rightFinalY) + 6;
+
+  // Notes & Sign-offs (Ensure it fits on the single page)
+  doc.setFontSize(8);
+  doc.setFont('helvetica', 'bold');
+  doc.setTextColor(15, 23, 42);
+  doc.text('Statement Notes & Disclaimers', 14, finalY);
+
+  doc.setFontSize(7);
+  doc.setFont('helvetica', 'normal');
+  doc.setTextColor(71, 85, 105);
+  doc.text('This is an automated report. For any corrections, inquiries, or further support, please direct your request to administrative support.', 14, finalY + 5);
+
+  // Footer stamping (Should only be 1 page)
   const pageCount = doc.getNumberOfPages();
   for (let i = 1; i <= pageCount; i++) {
     doc.setPage(i);
-    doc.setFontSize(8);
+    doc.setFontSize(7.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184);
-    
+
     // Left stamp
-    doc.text('Bachat Audit Engine', 14, 285);
-    
+    doc.text('Bachat Audit Engine', 14, 288);
+
     // Right stamp
     const footerRightText = `Generated: ${timestamp} | Page ${i} of ${pageCount}`;
-    doc.text(footerRightText, 196, 285, { align: 'right' });
+    doc.text(footerRightText, 196, 288, { align: 'right' });
   }
 
   doc.save(`${orgName}_Deposit_Report_${month}_${year}.pdf`);
@@ -581,11 +916,11 @@ export const generateLoanReport = (data: LoanReportData) => {
   doc.setFontSize(22);
   doc.setTextColor(59, 130, 246); // Blue-500
   doc.text(orgName, 148.5, 20, { align: 'center' });
-  
+
   doc.setFontSize(14);
   doc.setTextColor(100);
   doc.text('Loan Portfolio & Credit Audit Report', 148.5, 30, { align: 'center' });
-  
+
   doc.setFontSize(10);
   doc.text(`Generated on: ${timestamp}`, 148.5, 38, { align: 'center' });
 
@@ -642,7 +977,7 @@ export const generateLoanReport = (data: LoanReportData) => {
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
     doc.text('Audit Notes & Sign-Off', 14, 20);
-    
+
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
@@ -652,7 +987,7 @@ export const generateLoanReport = (data: LoanReportData) => {
     doc.setFont('helvetica', 'bold');
     doc.setTextColor(15, 23, 42);
     doc.text('Audit Notes & Sign-Off', 14, finalY);
-    
+
     doc.setFontSize(8.5);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(71, 85, 105);
@@ -666,10 +1001,10 @@ export const generateLoanReport = (data: LoanReportData) => {
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.setTextColor(148, 163, 184);
-    
+
     // Left stamp
     doc.text('Bachat Audit Engine', 14, 200);
-    
+
     // Right stamp
     const footerRightText = `Generated: ${timestamp} | Page ${i} of ${pageCount}`;
     doc.text(footerRightText, 283, 200, { align: 'right' });
@@ -686,11 +1021,11 @@ export const generateMemberReport = (data: MemberReportData) => {
   doc.setFontSize(22);
   doc.setTextColor(79, 70, 229); // Indigo-600
   doc.text(orgName, 105, 20, { align: 'center' });
-  
+
   doc.setFontSize(14);
   doc.setTextColor(100);
   doc.text('Member Standing & Equity Audit Report', 105, 30, { align: 'center' });
-  
+
   doc.setFontSize(10);
   doc.text(`Generated on: ${timestamp}`, 105, 38, { align: 'center' });
 
@@ -737,18 +1072,18 @@ export const generateMemberReport = (data: MemberReportData) => {
 };
 
 export const exportFinancialToExcel = (data: FinancialReportData) => {
-  const { 
-    orgName, 
+  const {
+    orgName,
     bankDetails,
-    targetMonth, 
-    targetYear, 
-    collection, 
-    expenditure, 
+    targetMonth,
+    targetYear,
+    collection,
+    expenditure,
     assetTracking,
-    nav, 
-    perMemberWealth, 
-    totalMembers, 
-    timestamp, 
+    nav,
+    perMemberWealth,
+    totalMembers,
+    timestamp,
     ledgerData,
     stats,
     lifetimeStats
@@ -776,7 +1111,7 @@ export const exportFinancialToExcel = (data: FinancialReportData) => {
   collection.forEach(item => rows.push([item.label, item.val]));
   const revSubTotal = collection.reduce((a, b) => a + b.val, 0);
   rows.push(["Operational Sub-Total", revSubTotal]);
-  
+
   rows.push([]);
   rows.push(["3. ASSET TRACKING & CREDITS"]);
   rows.push(["Principal Repayment", assetTracking?.principalRepayment || 0]);
@@ -814,7 +1149,7 @@ export const exportFinancialToExcel = (data: FinancialReportData) => {
 
 export const exportDepositToExcel = (data: DepositReportData) => {
   const { orgName, month, year, items, timestamp } = data;
-  
+
   const totalApproved = items.filter(i => i.status === 'APPROVED').reduce((sum, i) => sum + i.amount, 0);
   const totalFine = items.filter(i => i.status === 'APPROVED').reduce((sum, i) => sum + (i.fine || 0), 0);
 

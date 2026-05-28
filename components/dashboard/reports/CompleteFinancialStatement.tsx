@@ -234,17 +234,28 @@ const CompleteFinancialStatement: React.FC<CompleteFinancialStatementProps> = ({
                 </tr>
                 {stats.principalRepaymentLogs?.length > 0 && (
                   <tr>
-                    <td colSpan={5} className="px-10 py-3 bg-blue-50/30">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-8">
+                    <td colSpan={5} className="px-10 py-4 bg-blue-50/30">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-8">
                         {stats.principalRepaymentLogs.map((log: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between border-b border-blue-100/50 pb-1">
-                            <div className="flex items-center gap-1.5 overflow-hidden">
-                              <div className="w-4 h-4 rounded-full bg-blue-500/20 flex items-center justify-center shrink-0">
-                                <HandCoins className="w-2 h-2 text-blue-600" />
+                          <div key={idx} className="flex items-center justify-between border-b border-blue-100/50 pb-2 pt-2">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <div className="w-6 h-6 rounded-full bg-blue-500/10 border border-blue-200/50 flex items-center justify-center shrink-0 overflow-hidden relative">
+                                {log.profileImage ? (
+                                  <img 
+                                    src={log.profileImage} 
+                                    alt={log.memberName}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <User className="w-3.5 h-3.5 text-blue-600" />
+                                )}
                               </div>
-                              <p className="text-[8px] font-bold text-slate-600 truncate">{log.memberName}</p>
+                              <div className="flex flex-col">
+                                <p className="text-[9px] font-bold text-slate-900 leading-tight">{log.memberName}</p>
+                                <p className="text-[7px] text-slate-500 uppercase tracking-widest leading-none mt-0.5">Acc: #{log.accountNo || "—"}</p>
+                              </div>
                             </div>
-                            <p className="text-[8px] font-black text-blue-700 ml-2">Rs. {log.amount.toLocaleString()}</p>
+                            <p className="text-[10px] font-black text-blue-700 ml-2">Rs. {log.amount.toLocaleString()}</p>
                           </div>
                         ))}
                       </div>
@@ -263,17 +274,31 @@ const CompleteFinancialStatement: React.FC<CompleteFinancialStatementProps> = ({
                 </tr>
                 {stats.advanceInflowLogs?.length > 0 && (
                   <tr>
-                    <td colSpan={5} className="px-10 py-3 bg-amber-50/30">
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-2 gap-x-8">
+                    <td colSpan={5} className="px-10 py-4 bg-amber-50/30">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-y-3 gap-x-8">
                         {stats.advanceInflowLogs.map((log: any, idx: number) => (
-                          <div key={idx} className="flex items-center justify-between border-b border-amber-100/50 pb-1">
-                            <div className="flex items-center gap-1.5 overflow-hidden">
-                              <div className="w-4 h-4 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0">
-                                <Wallet className="w-2 h-2 text-amber-600" />
+                          <div key={idx} className="flex items-center justify-between border-b border-amber-100/50 pb-2 pt-2">
+                            <div className="flex items-center gap-2 overflow-hidden">
+                              <div className="w-6 h-6 rounded-full bg-amber-500/10 border border-amber-200/50 flex items-center justify-center shrink-0 overflow-hidden relative">
+                                {log.profileImage ? (
+                                  <img 
+                                    src={log.profileImage} 
+                                    alt={log.memberName}
+                                    className="w-full h-full object-cover"
+                                  />
+                                ) : (
+                                  <User className="w-3.5 h-3.5 text-amber-600" />
+                                )}
                               </div>
-                              <p className="text-[8px] font-bold text-slate-600 truncate">{log.memberName}</p>
+                              <div className="flex flex-col">
+                                <p className="text-[9px] font-bold text-slate-900 leading-tight">{log.memberName}</p>
+                                <p className="text-[7px] text-slate-500 uppercase tracking-widest leading-none mt-0.5">Acc: #{log.accountNo || "—"}</p>
+                              </div>
                             </div>
-                            <p className="text-[8px] font-black text-amber-700 ml-2">Rs. {log.amount.toLocaleString()}</p>
+                            <div className="text-right">
+                              <p className="text-[10px] font-black text-amber-700">Rs. {log.amount.toLocaleString()}</p>
+                              <p className="text-[7px] text-slate-500 uppercase tracking-tight mt-0.5">{log.source}</p>
+                            </div>
                           </div>
                         ))}
                       </div>
