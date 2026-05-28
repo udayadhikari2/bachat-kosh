@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useMemo, useEffect } from "react";
-import { X, CreditCard, AlertCircle, CheckCircle2, Loader2, Calendar, Info, CornerDownRight, ShieldCheck, RefreshCw, Calculator, HandCoins } from "lucide-react";
+import { X, CreditCard, AlertCircle, CheckCircle2, Loader2, Calendar, Info, CornerDownRight, ShieldCheck, RefreshCw, Calculator, HandCoins, Eye } from "lucide-react";
 import { settleLoan } from "@/lib/actions/loan";
 import { calculateLoanStats } from "@/lib/utils/loan-calculations";
 
@@ -472,6 +472,69 @@ export default function LoanSettleModal({ loan, adminId, onSuccess, onClose, def
       >
         {/* Left Side: Detailed Content (70%) */}
         <div className="flex-1 overflow-y-auto px-8 py-8 space-y-8 custom-scrollbar lg:border-r lg:border-white/5 lg:w-[70%]">
+
+          {/* Pending Repayments from Member */}
+          {loan.payments && loan.payments.some((p: any) => p.verified === false) && (
+            <div className="p-6 bg-slate-900 border border-indigo-500/20 rounded-[24px] space-y-4 shadow-xl">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="w-5 h-5 text-indigo-400 animate-pulse" />
+                <h3 className="text-xs font-black uppercase tracking-tight text-white">Pending Repayment Submissions</h3>
+              </div>
+              <div className="space-y-3">
+                {loan.payments
+                  .filter((p: any) => p.verified === false)
+                  .map((pmt: any, index: number) => (
+                    <div 
+                      key={pmt._id || index} 
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 p-4 bg-black/40 border border-white/5 rounded-xl"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-bold text-white">Rs. {pmt.amount.toLocaleString()}</span>
+                          <span className="text-[8px] bg-indigo-500/20 text-indigo-400 px-2 py-0.5 rounded-full font-black uppercase tracking-widest">PENDING VERIFICATION</span>
+                        </div>
+                        <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+                          Submitted: {new Date(pmt.date).toLocaleDateString()}
+                        </p>
+                        {pmt.proof && pmt.proof.startsWith("http") && (
+                          <div className="mt-2">
+                            <a 
+                              href={pmt.proof} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="text-[9px] text-indigo-400 hover:text-indigo-300 font-black uppercase tracking-widest flex items-center gap-1.5"
+                            >
+                              <Eye className="w-3 h-3" /> View Screenshot Proof
+                            </a>
+                            <div className="mt-2 relative w-32 h-20 rounded-lg overflow-hidden border border-white/10 bg-slate-950">
+                              <Image 
+                                src={pmt.proof} 
+                                alt="Payment Proof" 
+                                fill 
+                                sizes="128px"
+                                className="object-cover hover:scale-110 transition-transform duration-300 cursor-pointer"
+                                onClick={() => window.open(pmt.proof, "_blank")}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleAmountChange(pmt.amount.toString());
+                          setNote(`Verified member payment of Rs. ${pmt.amount}. Proof: ${pmt.proof || "N/A"}`);
+                          toast.success("Repayment amount applied to settlement!");
+                        }}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-[9px] font-black uppercase tracking-widest transition-all active:scale-95"
+                      >
+                        Apply Payment
+                      </button>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
 
           {/* Member Advance Balance Consumption / Deduction Check */}
           {availableAdvance > 0 && (

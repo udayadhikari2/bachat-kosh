@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   PiggyBank,
@@ -69,8 +70,15 @@ const MemberHistoryModal = dynamic(() => import("@/components/dashboard/MemberHi
 
 export default function DepositsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const currentUser = session?.user as any;
   const isAdmin = currentUser?.role === "ADMIN";
+
+  useEffect(() => {
+    if (currentUser && currentUser.role === "USER") {
+      router.replace("/dashboard?tab=deposit");
+    }
+  }, [currentUser, router]);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);

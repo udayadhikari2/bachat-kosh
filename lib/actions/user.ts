@@ -351,3 +351,19 @@ export async function bulkImportUsers(usersData: any[], organizationId: string) 
     return { success: false, error: error.message || "Failed to import users" };
   }
 }
+
+export async function getLinkedAccounts(userId: string) {
+  try {
+    await connectDB();
+    const user = await User.findById(userId)
+      .populate("familyMembers.memberId", "name accountNumber profileImage isMinor advanceBalance email phoneNumber")
+      .lean();
+
+    return { 
+      success: true, 
+      familyMembers: user ? JSON.parse(JSON.stringify(user.familyMembers)) : [] 
+    };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}

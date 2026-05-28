@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   HandCoins, Plus, CheckCircle2, AlertCircle, TrendingUp,
@@ -42,6 +43,7 @@ type ActiveModal = "settle" | "delete" | "details" | "clearHistory" | "undo" | "
 
 export default function LoansPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const [loans, setLoans] = useState<any[]>([]);
   const [historyLoans, setHistoryLoans] = useState<any[]>([]);
   const [health, setHealth] = useState<any>(null);
@@ -97,6 +99,12 @@ export default function LoansPage() {
   const user = session?.user as any;
   const isAdmin = user?.role === "ADMIN";
   const organizationId = user?.organizationId;
+
+  useEffect(() => {
+    if (user && user.role === "USER") {
+      router.replace("/dashboard?tab=loans");
+    }
+  }, [user, router]);
 
   // Single selected loan (for settle/renew/details)
   const singleSelectedLoan = useMemo(() => {

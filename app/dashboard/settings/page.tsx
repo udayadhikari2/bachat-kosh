@@ -1,12 +1,21 @@
 "use client";
 
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { Settings, Shield, User, Lock, Bell, Moon, Globe } from "lucide-react";
 import PageHeader from "@/components/dashboard/PageHeader";
+import { useEffect } from "react";
 
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const user = session?.user as any;
+
+  useEffect(() => {
+    if (user && user.role === "USER") {
+      router.replace("/dashboard?tab=settings");
+    }
+  }, [user, router]);
 
   return (
     <div className="space-y-8 max-w-4xl">

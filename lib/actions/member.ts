@@ -122,7 +122,8 @@ export async function getMemberActivity(userId: string) {
           totalLoanPaid: loans.reduce((sum, l) => sum + (l.principalPaid || 0), 0),
           currentAdvanceBalance: user.advanceBalance || 0
         },
-        timeline
+        timeline,
+        loans
       }))
     };
   } catch (error: any) {

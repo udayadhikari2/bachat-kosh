@@ -441,6 +441,9 @@ export async function settleLoan(params: {
     if (!loan) throw new Error("Loan not found");
     if (loan.status !== "ACTIVE") throw new Error("Only ACTIVE loans can be settled");
 
+    // Clear unverified payment requests as they are now being verified/replaced in this transaction
+    loan.payments = loan.payments.filter((p: any) => p.verified !== false);
+
     const admin = await User.findById(params.adminId);
     if (!admin || admin.role !== "ADMIN") throw new Error("Unauthorized");
 
@@ -1155,6 +1158,67 @@ export async function getFinancialAuditLogs(organizationId: string) {
       userBalances: JSON.parse(JSON.stringify(userBalances))
     };
   } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function submitLoanRepaymentRequest(params: {
+  loanId: string;
+  userId: string;
+  amount: number;
+  proof: string;
+  remarks?: string;
+}) {
+  try {
+    await connectDB();
+    const loan = await Loan.findById(params.loanId);
+    if (!loan) throw new Error("Loan not found");
+    if (loan.status !== "ACTIVE" && loan.status !== "OVERDUE") {
+      throw new Error("Can only submit repayment for active or overdue loans");
+    }
+
+    const amount = Number(params.amount);
+    if (isNaN(amount) || amount <= 0) {
+      throw new Error("Amount must be greater than zero");
+    }
+
+    loan.payments.push({
+      date: new Date(),
+      amount,
+      type: "PRINCIPAL",
+      proof: params.proof,
+      verified: false,
+    });
+
+    await loan.save();
+
+    // Create Notification for Admin Committee
+    const admins = await User.find({
+      organizationId: loan.organizationId,
+      role: "ADMIN"
+    });
+
+    const user = await User.findById(params.userId);
+    const userName = user ? user.name : "A member";
+
+    const notifications = admins.map(admin => ({
+      senderId: params.userId,
+      recipientId: admin._id,
+      relatedId: loan._id,
+      title: "Loan Payment Submission",
+      message: `${userName} has submitted Rs. ${amount} as loan repayment. Verification proof uploaded.`,
+      type: "INFO",
+      isRead: false
+    }));
+
+    await Notification.insertMany(notifications);
+
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[SUBMIT_LOAN_REPAYMENT_REQUEST_ERROR]:", error);
     return { success: false, error: error.message };
   }
 }

@@ -1,115 +1,175 @@
 "use client";
 
-import { useState } from "react";
-import { 
-  Wallet, 
-  History, 
-  HelpCircle, 
-  Calendar,
-  AlertCircle
-} from "lucide-react";
-import { motion } from "framer-motion";
+import { useState, useEffect, useTransition } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Loader2, PiggyBank } from "lucide-react";
+import toast from "react-hot-toast";
+
+// Sub-components
+import MemberHomeTab from "./member/MemberHomeTab";
+import MemberDepositTab from "./member/MemberDepositTab";
+import MemberLoansTab from "./member/MemberLoansTab";
+import MemberSettingsTab from "./member/MemberSettingsTab";
+
+// Form Overlays
 import SubmitDepositForm from "./SubmitDepositForm";
 
+// Server Actions
+import { getMemberActivity } from "@/lib/actions/member";
+import { getOrganization } from "@/lib/actions/organization";
+import { getCurrentNepaliDate } from "@/lib/utils/nepali-date";
+
 export default function UserView() {
+  const { data: session } = useSession();
+  const sessionUser = session?.user as any;
+
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const activeTab = searchParams.get("tab") || "home";
+
+  // Active Profile State (Defaults to logged-in parent user)
+  const [activeUserId, setActiveUserId] = useState("");
+  const [memberData, setMemberData] = useState<any>(null);
+  const [orgConfig, setOrgConfig] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Centralized Modal States (for Home Tab Quick Actions)
   const [showDepositModal, setShowDepositModal] = useState(false);
-  
-  const currentMonthBS = "Chaitra 2080"; 
-  const currentMonthEN = new Date().toLocaleString('default', { month: 'long', year: 'numeric' });
-  const stats = [
-    { label: "My Total Deposit", value: "Rs. 0", icon: Wallet, color: "text-emerald-500" },
-    { label: "Active Loan", value: "Rs. 0", icon: AlertCircle, color: "text-red-500" },
-    { label: "Deposit Month", value: currentMonthEN, icon: Calendar, color: "text-blue-500" },
-    { label: "Status", value: "Pending", icon: History, color: "text-slate-400" },
-  ];
+
+  // Current Nepali Month string (e.g., "Chaitra 2080")
+  const [currentNepaliMonth, setCurrentNepaliMonth] = useState("");
+
+  useEffect(() => {
+    if (sessionUser?.id) {
+      setActiveUserId(sessionUser.id);
+    }
+    const bsDate = getCurrentNepaliDate();
+    setCurrentNepaliMonth(`${bsDate.monthName} ${bsDate.year}`);
+  }, [sessionUser]);
+
+  const loadData = async (targetId: string) => {
+    if (!targetId) return;
+    setLoading(true);
+    try {
+      const res = await getMemberActivity(targetId);
+      if (res.success && res.data) {
+        setMemberData(res.data);
+        
+        // Fetch Organization Config once we have organizationId
+        const orgId = res.data.user?.organizationId;
+        if (orgId) {
+          const orgRes = await getOrganization(orgId);
+          if (orgRes.success) {
+            setOrgConfig(orgRes.data.config);
+          }
+        }
+      } else {
+        toast.error(res.error || "Failed to load account activity");
+      }
+    } catch {
+      toast.error("Failed to load account activity");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeUserId) {
+      loadData(activeUserId);
+    }
+  }, [activeUserId, refreshTrigger]);
+
+  const handleRefresh = () => {
+    setRefreshTrigger((prev) => prev + 1);
+  };
+
+  const handleTabChange = (tab: string) => {
+    router.push(`/dashboard?tab=${tab}`);
+  };
+
+  if (loading && !memberData) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
+        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
+          Synchronizing Member Activity...
+        </p>
+      </div>
+    );
+  }
+
+  // Animation variants for tab transitions
+  const tabVariants = {
+    initial: { opacity: 0, x: 15 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -15 },
+  };
 
   return (
-    <div className="space-y-8">
-      <div className="flex justify-between items-center">
+    <div className="space-y-6">
+      <AnimatePresence mode="wait">
         <motion.div
-          initial={{ x: -20, opacity: 0 }}
-          animate={{ x: 0, opacity: 1 }}
+          key={activeTab}
+          initial="initial"
+          animate="animate"
+          exit="exit"
+          variants={tabVariants}
+          transition={{ duration: 0.2 }}
         >
-          <h1 className="text-3xl font-black text-white tracking-tight">Member Portal</h1>
-          <p className="text-slate-400 mt-1 font-medium">Track your savings, apply for loans, and manage your monthly deposits.</p>
+          {activeTab === "home" && (
+            <MemberHomeTab
+              memberData={memberData}
+              orgConfig={orgConfig}
+              currentNepaliMonth={currentNepaliMonth}
+              onTabChange={handleTabChange}
+              onOpenDeposit={() => setShowDepositModal(true)}
+              onOpenTransfer={() => handleTabChange("deposit")} // routes to deposit tab
+              onOpenLoanRequest={() => handleTabChange("loans")} // routes to loans tab
+              onOpenLoanRepay={() => handleTabChange("loans")} // routes to loans tab
+            />
+          )}
+
+          {activeTab === "deposit" && (
+            <MemberDepositTab
+              memberData={memberData}
+              orgConfig={orgConfig}
+              currentNepaliMonth={currentNepaliMonth}
+              onOpenDepositForm={() => setShowDepositModal(true)}
+              onRefresh={handleRefresh}
+            />
+          )}
+
+          {activeTab === "loans" && (
+            <MemberLoansTab
+              memberData={memberData}
+              orgConfig={orgConfig}
+              onRefresh={handleRefresh}
+            />
+          )}
+
+          {activeTab === "settings" && (
+            <MemberSettingsTab
+              memberData={memberData}
+              activeUserId={activeUserId}
+              onChangeActiveUser={setActiveUserId}
+              onRefresh={handleRefresh}
+            />
+          )}
         </motion.div>
-        <motion.button 
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          onClick={() => setShowDepositModal(true)}
-          className="flex items-center px-8 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl transition-all font-black uppercase tracking-widest text-[11px] shadow-[0_10px_30px_rgba(16,185,129,0.3)]"
-        >
-          Submit Monthly Deposit
-        </motion.button>
-      </div>
+      </AnimatePresence>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {stats.map((stat, i) => {
-          const Icon = stat.icon;
-          const value = i === 2 ? currentMonthEN : i === 0 ? `Rs. 0` : stat.value;
-          return (
-            <motion.div 
-              key={i} 
-              initial={{ y: 20, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              transition={{ delay: i * 0.1 }}
-              className="bg-slate-900/50 border border-slate-800 p-6 rounded-3xl backdrop-blur-sm hover:border-emerald-500/30 transition-all duration-300 group cursor-default"
-            >
-              <div className="flex items-center justify-between">
-                <div className={`p-4 rounded-2xl bg-slate-800 ${stat.color} group-hover:scale-110 transition-transform duration-500 shadow-inner`}>
-                  <Icon className="w-6 h-6" />
-                </div>
-              </div>
-              <div className="mt-6">
-                <p className="text-slate-500 text-[10px] font-black uppercase tracking-widest">{stat.label}</p>
-                <p className="text-2xl font-black text-white mt-1 tracking-tight">{value}</p>
-              </div>
-            </motion.div>
-          );
-        })}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 space-y-8">
-          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
-            <h3 className="text-xl font-semibold text-white mb-6 flex items-center">
-              <History className="w-5 h-5 mr-2 text-emerald-400" />
-              Recent Activity
-            </h3>
-            <div className="text-center py-12 text-slate-500 border-2 border-dashed border-slate-800 rounded-xl font-medium">
-              No recent transactions found.
-            </div>
-          </div>
-        </div>
-        
-        <div className="space-y-8">
-          <div className="bg-emerald-600/10 border border-emerald-500/20 rounded-2xl p-6 backdrop-blur-sm">
-            <h3 className="text-lg font-semibold text-emerald-400 mb-2 flex items-center">
-              <HelpCircle className="w-5 h-5 mr-2" />
-              Quick Info
-            </h3>
-            <p className="text-sm text-slate-300 leading-relaxed">
-              Remember to deposit Rs. 1,000 before the end of this month to avoid a Rs. 30 late fee.
-            </p>
-          </div>
-          
-          <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6 backdrop-blur-sm">
-            <h3 className="text-lg font-semibold text-white mb-4">Loan Eligibility</h3>
-            <div className="space-y-4">
-              <div className="h-2 bg-slate-800 rounded-full overflow-hidden">
-                <div className="h-full bg-emerald-500 w-[60%]"></div>
-              </div>
-              <p className="text-xs text-slate-400">
-                You are 60% eligible for your next loan application based on your deposit history.
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
+      {/* Submit Monthly Deposit modal */}
       {showDepositModal && (
-        <SubmitDepositForm 
-          onClose={() => setShowDepositModal(false)}
+        <SubmitDepositForm
+          onClose={() => {
+            setShowDepositModal(false);
+            handleRefresh();
+          }}
+          currentMonth={currentNepaliMonth}
+          defaultAmount={orgConfig?.monthlyDepositAmount || 1000}
         />
       )}
     </div>

@@ -9,6 +9,7 @@ import { authOptions } from "@/lib/auth-config";
 import mongoose from "mongoose";
 import User from "@/lib/models/User";
 import Deposit from "@/lib/models/Deposit";
+import Notification from "@/lib/models/Notification";
 import { parseNepaliMonth, getDaysInMonth, bsToAd, getCurrentNepaliDate } from "@/lib/utils/nepali-date";
 import { reconcileMonthlyTotals } from "@/lib/actions/bank-ledger";
 
@@ -493,6 +494,123 @@ export async function transferAggregationCredit(params: {
     return { success: true };
   } catch (error: any) {
     console.error("[TRANSFER_CREDIT_ERROR]:", error);
+    return { success: false, error: error.message };
+  }
+}
+
+export async function transferMemberCreditDirect(params: {
+  senderId: string;
+  targetMemberId: string;
+  amount: number;
+  remarks?: string;
+}) {
+  try {
+    await connectDB();
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      throw new Error("Unauthorized: Session not found");
+    }
+
+    const curUser = session.user as any;
+    const sender = await User.findById(params.senderId);
+    if (!sender) throw new Error("Sender member not found");
+    if (!sender.organizationId) throw new Error("Sender has no organization assigned");
+
+    const isAuthorized = curUser.id === params.senderId || 
+                         (sender.guardianId && sender.guardianId.toString() === curUser.id);
+    if (!isAuthorized && curUser.role !== "ADMIN" && curUser.role !== "DEVELOPER") {
+      throw new Error("Unauthorized: Cannot transfer from this account");
+    }
+
+    const amount = params.amount;
+    if (isNaN(amount) || amount <= 0) {
+      throw new Error("Amount must be greater than zero");
+    }
+
+    if ((sender.advanceBalance || 0) < amount) {
+      throw new Error(`Insufficient advance balance. Available: Rs. ${sender.advanceBalance || 0}`);
+    }
+
+    const receiver = await User.findById(params.targetMemberId);
+    if (!receiver) throw new Error("Destination member not found");
+    if (!receiver.isActive) throw new Error("Destination member is inactive");
+    if (receiver.organizationId?.toString() !== sender.organizationId?.toString()) {
+      throw new Error("Destination member belongs to a different organization");
+    }
+
+    if (params.senderId === params.targetMemberId) {
+      throw new Error("Cannot transfer credit to yourself");
+    }
+
+    // Perform atomic balance updates
+    sender.advanceBalance = (sender.advanceBalance || 0) - amount;
+    receiver.advanceBalance = (receiver.advanceBalance || 0) + amount;
+
+    await Promise.all([sender.save(), receiver.save()]);
+
+    const currentNepali = getCurrentNepaliDate();
+    const monthStr = `${currentNepali.monthName} ${currentNepali.year}`;
+    const dateNow = new Date();
+
+    // Create Deposit log for sender (deduction)
+    const senderDeposit = await Deposit.create({
+      userId: sender._id,
+      organizationId: sender.organizationId,
+      amount: 0,
+      advancedPayment: -amount,
+      month: monthStr,
+      depositType: "ADVANCE",
+      depositDate: dateNow,
+      status: "APPROVED",
+      remarks: params.remarks || `Transferred Rs. ${amount} credit to ${receiver.name} (Acc: #${receiver.accountNumber})`,
+    });
+
+    // Create Deposit log for receiver (addition)
+    const receiverDeposit = await Deposit.create({
+      userId: receiver._id,
+      organizationId: receiver.organizationId,
+      amount: 0,
+      advancedPayment: amount,
+      month: monthStr,
+      depositType: "ADVANCE",
+      depositDate: dateNow,
+      status: "APPROVED",
+      remarks: `Received Rs. ${amount} credit from ${sender.name} (Acc: #${sender.accountNumber})`,
+    });
+
+    // Create Notifications
+    await Notification.create([
+      {
+        senderId: sender._id,
+        recipientId: receiver._id,
+        relatedId: receiverDeposit._id,
+        title: "Credit Received",
+        message: `You have received Rs. ${amount} advance credit from ${sender.name}.`,
+        type: "SUCCESS",
+        isRead: false,
+      },
+      {
+        senderId: sender._id,
+        recipientId: sender._id,
+        relatedId: senderDeposit._id,
+        title: "Credit Sent",
+        message: `Successfully transferred Rs. ${amount} advance credit to ${receiver.name}.`,
+        type: "INFO",
+        isRead: false,
+      }
+    ]);
+
+    // Reconcile totals
+    await reconcileMonthlyTotals(sender.organizationId.toString(), monthStr).catch(console.error);
+
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[MEMBER_TRANSFER_CREDIT_ERROR]:", error);
     return { success: false, error: error.message };
   }
 }
