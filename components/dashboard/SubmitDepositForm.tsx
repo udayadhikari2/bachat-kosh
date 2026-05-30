@@ -11,10 +11,11 @@ import {
   UploadCloud,
   ArrowRight,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { adToBs, getCurrentNepaliDate, parseNepaliMonth, getDaysInMonth, bsToAd } from "@/lib/utils/nepali-date";
+import { adToBs, getCurrentNepaliDate, parseNepaliMonth, getDaysInMonth, bsToAd, getNepaliMonthRange, getPreviousNepaliMonth, compareNepaliMonths } from "@/lib/utils/nepali-date";
 import NepaliDatePicker from "./NepaliDatePicker";
 import { createDeposit } from "@/lib/actions/deposit";
 import { getUserBalance } from "@/lib/actions/user";
@@ -26,12 +27,14 @@ interface SubmitDepositFormProps {
   onClose: () => void;
   currentMonth?: string;
   defaultAmount?: number;
+  memberData?: any;
 }
 
 export default function SubmitDepositForm({
   onClose,
   currentMonth = "",
-  defaultAmount = 1000
+  defaultAmount = 1000,
+  memberData
 }: SubmitDepositFormProps) {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -51,9 +54,64 @@ export default function SubmitDepositForm({
 
   const { data: session } = useSession();
 
+  // 1. Calculate unpaid months for dropdown
+  const unpaidMonths = (() => {
+    if (!currentMonth || !orgConfig) return [];
+    const initialMonth = orgConfig.financials?.initialOpeningMonth;
+    const initialYear = orgConfig.financials?.initialOpeningYear;
+    if (!initialMonth || !initialYear) return [];
+    
+    const startMonthStr = `${initialMonth} ${initialYear}`;
+    const monthsRange = getNepaliMonthRange(startMonthStr, currentMonth);
+    
+    const timeline = memberData?.timeline || [];
+    return monthsRange.filter(mStr => {
+      const hasDeposit = timeline.some(
+        (item: any) => 
+          item.type === "DEPOSIT" && 
+          item.month === mStr && 
+          (item.status === "APPROVED" || item.status === "PENDING")
+      );
+      return !hasDeposit;
+    });
+  })();
+
+  const prevMonthStr = currentMonth ? getPreviousNepaliMonth(currentMonth) : "";
+  const isPrevMonthUnpaid = prevMonthStr ? unpaidMonths.includes(prevMonthStr) : false;
+  
+  // Months list to show in select dropdown
+  const availableDropdownMonths = Array.from(new Set([...unpaidMonths, currentMonth])).sort((a, b) => compareNepaliMonths(a, b));
+
   useEffect(() => {
-    const bs = getCurrentNepaliDate();
-    setBsMonth(`${bs.monthName} ${bs.year}`);
+    if (orgConfig && currentMonth) {
+      const initialMonth = orgConfig.financials?.initialOpeningMonth;
+      const initialYear = orgConfig.financials?.initialOpeningYear;
+      if (initialMonth && initialYear) {
+        const startMonthStr = `${initialMonth} ${initialYear}`;
+        const monthsRange = getNepaliMonthRange(startMonthStr, currentMonth);
+        const timeline = memberData?.timeline || [];
+        const unpaid = monthsRange.filter(mStr => {
+          const hasDeposit = timeline.some(
+            (item: any) => 
+              item.type === "DEPOSIT" && 
+              item.month === mStr && 
+              (item.status === "APPROVED" || item.status === "PENDING")
+          );
+          return !hasDeposit;
+        });
+
+        if (unpaid.length > 0) {
+          setBsMonth(unpaid[0]); // default to oldest unpaid month
+        } else {
+          setBsMonth(currentMonth);
+        }
+      } else {
+        setBsMonth(currentMonth);
+      }
+    } else {
+      const bs = getCurrentNepaliDate();
+      setBsMonth(currentMonth || `${bs.monthName} ${bs.year}`);
+    }
 
     if (session?.user) {
       const user = session.user as any;
@@ -68,7 +126,27 @@ export default function SubmitDepositForm({
         }
       });
     }
-  }, [session, defaultAmount]);
+  }, [session, defaultAmount, orgConfig, currentMonth, memberData]);
+
+  // Safeguard deposit type for previous months
+  useEffect(() => {
+    if (bsMonth !== currentMonth && depositType !== "MONTHLY") {
+      setDepositType("MONTHLY");
+    }
+  }, [bsMonth, currentMonth, depositType]);
+
+  // Translate Nepali month to Gregorian month approximation
+  useEffect(() => {
+    if (!bsMonth) return;
+    try {
+      const parsed = parseNepaliMonth(bsMonth);
+      const adDate = bsToAd(parsed.year, parsed.month, 1);
+      const engMonthName = adDate.toLocaleString("en-US", { month: "long", year: "numeric" });
+      setEnglishMonth(engMonthName);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [bsMonth]);
 
   const requiredBase = depositType === "MONTHLY" ? (orgConfig?.monthlyDepositAmount || defaultAmount || 0) : 0;
 
@@ -227,8 +305,27 @@ export default function SubmitDepositForm({
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/[0.03] border border-white/5 p-4 rounded-2xl flex flex-col justify-center relative overflow-hidden group">
               <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1.5">Target Month</p>
-              <p className="text-white font-black text-base uppercase tracking-tight">{englishMonth}</p>
-              <p className="text-[8px] text-emerald-500/50 font-black uppercase mt-1 tracking-tighter">{bsMonth}</p>
+              {isPrevMonthUnpaid ? (
+                <div className="relative mt-1">
+                  <select
+                    value={bsMonth}
+                    onChange={(e) => setBsMonth(e.target.value)}
+                    className="appearance-none w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-emerald-500/50 cursor-pointer font-bold pr-8"
+                  >
+                    {availableDropdownMonths.map((m) => (
+                      <option key={m} value={m} className="bg-slate-950 text-white">
+                        {m} {m === currentMonth ? "(Current)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                </div>
+              ) : (
+                <>
+                  <p className="text-white font-black text-base uppercase tracking-tight">{englishMonth}</p>
+                  <p className="text-[8px] text-emerald-500/50 font-black uppercase mt-1 tracking-tighter">{bsMonth}</p>
+                </>
+              )}
             </div>
             <div className="bg-white/[0.03] border border-white/5 p-4 rounded-2xl flex flex-col justify-center relative overflow-hidden group">
               <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1.5">Monthly Goal</p>
@@ -262,8 +359,12 @@ export default function SubmitDepositForm({
                   className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-5 py-3 text-emerald-400 font-black tracking-widest uppercase text-[11px] outline-none"
                 >
                   <option value="MONTHLY">Monthly Savings</option>
-                  <option value="SERVICE_CHARGE">Service Charge</option>
-                  <option value="LOAN_INTEREST">Loan Interest</option>
+                  {bsMonth === currentMonth && (
+                    <>
+                      <option value="SERVICE_CHARGE">Service Charge</option>
+                      <option value="LOAN_INTEREST">Loan Interest</option>
+                    </>
+                  )}
                 </select>
               </div>
               <div className="space-y-3">

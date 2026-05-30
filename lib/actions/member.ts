@@ -6,6 +6,10 @@ import Deposit from "@/lib/models/Deposit";
 import Loan from "@/lib/models/Loan";
 import Notification from "@/lib/models/Notification";
 import mongoose from "mongoose";
+import { getAdminDepositStats } from "@/lib/actions/deposit";
+import { getBankLedger } from "@/lib/actions/bank-ledger";
+import { getFinancialHealth } from "@/lib/actions/loan";
+import { getCurrentNepaliDate, parseNepaliMonth } from "@/lib/utils/nepali-date";
 
 export async function getMemberActivity(userId: string) {
   try {
@@ -112,6 +116,28 @@ export async function getMemberActivity(userId: string) {
     // Sort timeline by date descending
     timeline.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
+    // Fetch Organization-wide stats for user dashboard
+    const orgId = user.organizationId;
+    let orgStats = null;
+    if (orgId) {
+      try {
+        const orgIdStr = orgId.toString();
+        const currentNepali = getCurrentNepaliDate();
+        const currentMonthStr = `${currentNepali.monthName} ${currentNepali.year}`;
+        
+        const statsRes = await getOrganizationFinancialStats(orgIdStr, currentMonthStr);
+        if (statsRes.success && statsRes.data) {
+          orgStats = {
+            totalCollection: statsRes.data.totalCollection,
+            closingBalance: statsRes.data.closingBalance,
+            perMemberNetAssets: statsRes.data.perMemberNetAssets,
+          };
+        }
+      } catch (err) {
+        console.error("Error loading orgStats in getMemberActivity:", err);
+      }
+    }
+
     return {
       success: true,
       data: JSON.parse(JSON.stringify({
@@ -123,7 +149,8 @@ export async function getMemberActivity(userId: string) {
           currentAdvanceBalance: user.advanceBalance || 0
         },
         timeline,
-        loans
+        loans,
+        orgStats
       }))
     };
   } catch (error: any) {
@@ -169,6 +196,60 @@ export async function deleteTimelineEvents(userId: string, events: { id: string;
     
     // Cleanup any orphaned notifications if desired, etc.
     return { success: true };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function getOrganizationFinancialStats(organizationId: string, monthStr: string) {
+  try {
+    await connectDB();
+    const target = parseNepaliMonth(monthStr);
+
+    const [depositStatsRes, healthRes, ledgerRes] = await Promise.all([
+      getAdminDepositStats(organizationId, monthStr),
+      getFinancialHealth(organizationId, monthStr.split(" ")[0], target.year),
+      getBankLedger(organizationId, monthStr)
+    ]);
+
+    const statsUpto = depositStatsRes.success && depositStatsRes.data ? depositStatsRes.data.upto : null;
+    const healthData = healthRes.success && healthRes.data ? healthRes.data : null;
+    const ledgerData = ledgerRes.success && ledgerRes.data ? ledgerRes.data : null;
+
+    const totalCollectionUpto = statsUpto?.grandTotalCollection || 0;
+    const accruedInterest = healthData?.totalAccruedInterestActive || 0;
+    const outstandingFee = healthData?.totalOutstandingFeesActive || 0;
+    const totalValuation = totalCollectionUpto + accruedInterest + outstandingFee;
+
+    const totalCollection = totalValuation;
+    const closingBalance = ledgerData?.closingBalance || 0;
+
+    const advancePaidActive = healthData?.totalAdvancePaidActive || 0;
+    const bankChargesUpto = statsUpto?.bankCharges || 0;
+    const totalExpenditureUpto = statsUpto?.totalExpenditure || 0;
+    const totalDeductions = advancePaidActive + bankChargesUpto + totalExpenditureUpto;
+
+    const netAssets = totalValuation - totalDeductions;
+
+    const totalUsersCount = await User.countDocuments({
+      organizationId: new mongoose.Types.ObjectId(organizationId),
+      role: "USER",
+    });
+
+    const perMemberNetAssets = totalUsersCount > 0 ? Math.ceil(netAssets / totalUsersCount) : 0;
+
+    return {
+      success: true,
+      data: {
+        totalCollection,
+        closingBalance,
+        perMemberNetAssets,
+        netAssets,
+        totalUsersCount,
+        totalExpenditure: totalExpenditureUpto,
+        bankCharges: bankChargesUpto,
+      }
+    };
   } catch (error: any) {
     return { success: false, error: error.message };
   }

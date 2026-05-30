@@ -31,6 +31,7 @@ export default function UserView() {
 
   // Active Profile State (Defaults to logged-in parent user)
   const [activeUserId, setActiveUserId] = useState("");
+  const [switchingUser, setSwitchingUser] = useState(false);
   const [memberData, setMemberData] = useState<any>(null);
   const [orgConfig, setOrgConfig] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -73,7 +74,15 @@ export default function UserView() {
       toast.error("Failed to load account activity");
     } finally {
       setLoading(false);
+      setSwitchingUser(false);
     }
+  };
+
+  const handleActiveUserChange = (newUserId: string) => {
+    if (newUserId === activeUserId) return;
+    setSwitchingUser(true);
+    setActiveUserId(newUserId);
+    router.push(`/dashboard?tab=home`);
   };
 
   useEffect(() => {
@@ -90,12 +99,17 @@ export default function UserView() {
     router.push(`/dashboard?tab=${tab}`);
   };
 
-  if (loading && !memberData) {
+  if (switchingUser || (loading && !memberData)) {
     return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-emerald-500" />
-        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest">
-          Synchronizing Member Activity...
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 animate-in fade-in duration-500">
+        <div className="relative">
+          <div className="w-16 h-16 rounded-full border-4 border-emerald-500/10 border-t-emerald-500 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <PiggyBank className="w-6 h-6 text-emerald-400 animate-pulse" />
+          </div>
+        </div>
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 animate-bounce">
+          Switching Member Account...
         </p>
       </div>
     );
@@ -128,7 +142,7 @@ export default function UserView() {
               onOpenDeposit={() => setShowDepositModal(true)}
               onOpenTransfer={() => handleTabChange("deposit")} // routes to deposit tab
               onOpenLoanRequest={() => handleTabChange("loans")} // routes to loans tab
-              onOpenLoanRepay={() => handleTabChange("loans")} // routes to loans tab
+              onOpenLoanRepay={(loanId) => router.push(`/dashboard?tab=loans${loanId ? `&loanId=${loanId}` : ""}`)}
             />
           )}
 
@@ -154,7 +168,7 @@ export default function UserView() {
             <MemberSettingsTab
               memberData={memberData}
               activeUserId={activeUserId}
-              onChangeActiveUser={setActiveUserId}
+              onChangeActiveUser={handleActiveUserChange}
               onRefresh={handleRefresh}
             />
           )}
@@ -164,6 +178,7 @@ export default function UserView() {
       {/* Submit Monthly Deposit modal */}
       {showDepositModal && (
         <SubmitDepositForm
+          memberData={memberData}
           onClose={() => {
             setShowDepositModal(false);
             handleRefresh();

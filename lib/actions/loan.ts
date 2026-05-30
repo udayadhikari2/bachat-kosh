@@ -11,7 +11,7 @@ import { revalidatePath } from "next/cache";
 import { calculateLoanStats } from "@/lib/utils/loan-calculations";
 import BankLedger from "@/lib/models/BankLedger";
 import Aggregation from "@/lib/models/Aggregation";
-import { parseNepaliMonth, bsToAd, getDaysInMonth, adToBs, NEPALI_MONTHS } from "@/lib/utils/nepali-date";
+import { parseNepaliMonth, bsToAd, getDaysInMonth, adToBs, NEPALI_MONTHS, getNepaliMonthEndAd } from "@/lib/utils/nepali-date";
 import { getBankLedger, reconcileMonthlyTotals } from "@/lib/actions/bank-ledger";
 
 
@@ -875,9 +875,7 @@ export async function getFinancialHealth(organizationId: string, month?: string,
     let calculationDate = new Date();
     if (month && year) {
       const { month: mIdx } = parseNepaliMonth(`${month} ${year}`);
-      const lastDay = getDaysInMonth(year, mIdx);
-      const endOfMonth = bsToAd(year, mIdx, lastDay);
-      endOfMonth.setHours(23, 59, 59, 999);
+      const endOfMonth = getNepaliMonthEndAd(year, mIdx);
 
       const now = new Date();
       // If the selected month is in the future or is the current month, 

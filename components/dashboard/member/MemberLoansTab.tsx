@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { 
   HandCoins, 
@@ -20,6 +21,7 @@ import {
 } from "lucide-react";
 import { createLoanRequest, submitLoanRepaymentRequest } from "@/lib/actions/loan";
 import toast from "react-hot-toast";
+import { calculateLoanStats } from "@/lib/utils/loan-calculations";
 
 interface MemberLoansTabProps {
   memberData: any;
@@ -36,6 +38,10 @@ export default function MemberLoansTab({
   const stats = memberData?.stats || { totalDeposits: 0, activeLoans: 0, totalLoanPaid: 0, currentAdvanceBalance: 0 };
   const activities = memberData?.timeline || [];
 
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const queryLoanId = searchParams.get("loanId");
+
   // Filter activities to loans
   const loanRequests = activities.filter((a: any) => a.type === "LOAN_REQUEST");
   const activeLoanTimeline = loanRequests.find((l: any) => l.status === "ACTIVE" || l.status === "OVERDUE");
@@ -46,10 +52,34 @@ export default function MemberLoansTab({
 
   // Active Loan Details Drawer
   const [showRepayModal, setShowRepayModal] = useState(false);
+  const [repayLoanId, setRepayLoanId] = useState<string | null>(null);
   const [repayAmount, setRepayAmount] = useState("");
   const [repayProof, setRepayProof] = useState("");
   const [repayRemarks, setRepayRemarks] = useState("");
   const [isSubmittingRepay, setIsSubmittingRepay] = useState(false);
+
+  useEffect(() => {
+    if (queryLoanId) {
+      // Find if this loan exists and is active/overdue
+      const activeRawLoan = (memberData?.loans || []).find(
+        (l: any) => l._id.toString() === queryLoanId && ["ACTIVE", "OVERDUE"].includes(l.status)
+      );
+      if (activeRawLoan) {
+        setRepayLoanId(queryLoanId);
+        setShowRepayModal(true);
+      }
+    }
+  }, [queryLoanId, memberData?.loans]);
+
+  const handleCloseRepayModal = () => {
+    setShowRepayModal(false);
+    setRepayLoanId(null);
+    if (queryLoanId) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("loanId");
+      router.replace(`/dashboard?${params.toString()}`);
+    }
+  };
 
   // Apply Loan Modal
   const [showApplyModal, setShowApplyModal] = useState(false);
@@ -97,7 +127,8 @@ export default function MemberLoansTab({
 
   const handleRepaySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!activeLoanTimeline) {
+    const targetLoanId = repayLoanId || activeLoanTimeline?.id;
+    if (!targetLoanId) {
       toast.error("No active loan found to repay");
       return;
     }
@@ -113,7 +144,7 @@ export default function MemberLoansTab({
       // For proof, we submit a dummy placeholder or string URL
       const proofUrl = repayProof || "https://placehold.co/600x400/000000/FFFFFF/png?text=Loan+Repayment+Proof";
       const res = await submitLoanRepaymentRequest({
-        loanId: activeLoanTimeline.id,
+        loanId: targetLoanId,
         userId: user._id,
         amount: amt,
         proof: proofUrl,
@@ -122,7 +153,7 @@ export default function MemberLoansTab({
 
       if (res.success) {
         toast.success("Repayment proof submitted. Pending verification!");
-        setShowRepayModal(false);
+        handleCloseRepayModal();
         setRepayAmount("");
         setRepayRemarks("");
         setRepayProof("");
@@ -196,8 +227,13 @@ export default function MemberLoansTab({
           ) : (
             /* Display active loans */
             activeLoans.map((loan: any) => {
-              // Virtual breakdown fallbacks for user timeline (actual calculations handled by admin on settlement)
-              const remainingPayable = loan.amount; // fallback
+              const rawLoan = (memberData?.loans || []).find((l: any) => l._id.toString() === loan.id);
+              const loanStats = rawLoan ? calculateLoanStats(rawLoan) : null;
+              
+              const principalPaid = rawLoan?.principalPaid || 0;
+              const principalAmount = rawLoan?.principalAmount || loan.amount;
+              const percentPaid = principalAmount > 0 ? Math.min(100, Math.max(0, Math.round((principalPaid / principalAmount) * 100))) : 0;
+              
               return (
                 <div key={loan.id} className="space-y-6">
                   {/* Visual Progress Dashboard */}
@@ -216,33 +252,67 @@ export default function MemberLoansTab({
                         <TrendingUp className="w-5 h-5 text-emerald-400" />
                       </div>
                     </div>
-
+ 
                     <div className="mt-8 pt-5 border-t border-slate-850/60 space-y-4">
                       {/* Repayment Progress bar */}
                       <div className="space-y-1.5">
                         <div className="flex justify-between text-[8px] font-black uppercase text-slate-500 px-1">
                           <span>Principal Debt Repaid</span>
-                          <span>Virtual Progress</span>
+                          <span>{percentPaid}% Progress</span>
                         </div>
-                        <div className="h-2 bg-slate-850 rounded-full overflow-hidden shadow-inner">
-                          <div className="h-full bg-gradient-to-r from-emerald-600 to-cyan-400 w-[20%]" />
+                        <div className="h-2 bg-slate-850 rounded-full overflow-hidden shadow-inner border border-white/5 p-[1px]">
+                          <div className="h-full bg-gradient-to-r from-emerald-600 to-cyan-455 rounded-full transition-all duration-500" style={{ width: `${percentPaid}%` }} />
                         </div>
                       </div>
-
+ 
+                      {/* Outstanding Breakdown sub-panel */}
+                      {loanStats && (
+                        <div className="bg-slate-950/60 border border-white/5 rounded-2xl p-4 space-y-3 shadow-inner">
+                          <div className="flex justify-between items-center pb-2 border-b border-white/5">
+                            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Outstanding Breakdown</span>
+                            <span className="text-xs font-black text-emerald-400">Rs. {(loanStats.outstandingAmount || 0).toLocaleString()}</span>
+                          </div>
+                          
+                          <div className="space-y-2 text-[10px] uppercase font-bold tracking-wide">
+                            <div className="flex justify-between text-slate-500">
+                              <span>Outstanding Principal</span>
+                              <span className="text-slate-200">Rs. {(loanStats.principalOutstanding || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-500">
+                              <span>Interest (Base)</span>
+                              <span className="text-slate-200">Rs. {(loanStats.unpaidBaseInterest || 0).toLocaleString()}</span>
+                            </div>
+                            <div className="flex justify-between text-slate-500">
+                              <span>Interest (Penalty)</span>
+                              <span className={(loanStats.unpaidPenaltyInterest || 0) > 0 ? "text-rose-400" : "text-slate-200"}>
+                                Rs. {(loanStats.unpaidPenaltyInterest || 0).toLocaleString()}
+                              </span>
+                            </div>
+                            <div className="flex justify-between text-slate-500">
+                              <span>Service/Renewal Charge</span>
+                              <span className="text-slate-200">Rs. {((loanStats.unpaidSC || 0) + (loanStats.unpaidRenewal || 0)).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+ 
                       {/* Info grid */}
                       <div className="grid grid-cols-2 gap-4 text-xs pt-2">
                         <div className="bg-white/[0.01] border border-white/5 p-3 rounded-xl">
                           <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider">Interest Rate</span>
-                          <span className="text-white font-black block mt-1">{orgConfig?.interestRate || 12}% per Annum</span>
+                          <span className="text-white font-black block mt-1">{rawLoan?.interestRate || orgConfig?.interestRate || 12}% per Annum</span>
                         </div>
                         <div className="bg-white/[0.01] border border-white/5 p-3 rounded-xl">
                           <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider">Penalty Rate</span>
-                          <span className="text-rose-400 font-black block mt-1">{orgConfig?.penaltyRate || 20}% Overdue</span>
+                          <span className="text-rose-400 font-black block mt-1">{rawLoan?.penaltyRate || orgConfig?.penaltyRate || 20}% Overdue</span>
                         </div>
                       </div>
-
+ 
                       <button
-                        onClick={() => setShowRepayModal(true)}
+                        onClick={() => {
+                          setRepayLoanId(loan.id);
+                          setShowRepayModal(true);
+                        }}
                         className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
                       >
                         Submit Repayment Request
@@ -376,7 +446,7 @@ export default function MemberLoansTab({
                 </div>
                 <button
                   type="button"
-                  onClick={() => setShowRepayModal(false)}
+                  onClick={handleCloseRepayModal}
                   className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg text-slate-400 hover:text-white"
                 >
                   <XCircle className="w-4 h-4" />
@@ -427,7 +497,7 @@ export default function MemberLoansTab({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowRepayModal(false)}
+                    onClick={handleCloseRepayModal}
                     className="w-full py-3 text-[9px] text-slate-500 hover:text-white font-black uppercase tracking-widest"
                   >
                     Cancel

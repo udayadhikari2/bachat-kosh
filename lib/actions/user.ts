@@ -107,18 +107,21 @@ export async function updateUser(id: string, formData: FormData) {
   try {
     await connectDB();
     
-    const updates: any = {
-      name: formData.get("name"),
-      nickname: formData.get("nickname"),
-      email: formData.get("email"),
-      role: formData.get("role"),
-      accountNumber: formData.get("accountNumber"),
-      committeeRole: formData.get("committeeRole"),
-      isLoanApprover: formData.get("isLoanApprover") === "true",
-      isSecondaryAdmin: formData.get("isSecondaryAdmin") === "true",
-      phoneNumber: formData.get("phoneNumber"),
-      gender: formData.get("gender"),
-    };
+    const updates: any = {};
+
+    const fields = ["name", "nickname", "email", "role", "accountNumber", "committeeRole", "phoneNumber", "gender"];
+    fields.forEach((field) => {
+      if (formData.has(field)) {
+        updates[field] = formData.get(field);
+      }
+    });
+
+    if (formData.has("isLoanApprover")) {
+      updates.isLoanApprover = formData.get("isLoanApprover") === "true";
+    }
+    if (formData.has("isSecondaryAdmin")) {
+      updates.isSecondaryAdmin = formData.get("isSecondaryAdmin") === "true";
+    }
 
     const dobStr = formData.get("dateOfBirth") as string;
     if (dobStr) {
@@ -128,8 +131,13 @@ export async function updateUser(id: string, formData: FormData) {
       updates.isMinor = age < 16;
     }
 
-    if (formData.get("guardianId")) updates.guardianId = formData.get("guardianId");
-    if (formData.get("organizationId")) updates.organizationId = formData.get("organizationId");
+    if (formData.has("guardianId")) {
+      const gId = formData.get("guardianId");
+      updates.guardianId = gId ? gId : null;
+    }
+    if (formData.has("organizationId")) {
+      updates.organizationId = formData.get("organizationId");
+    }
     
     const familyMembersStr = formData.get("familyMembers") as string;
     if (familyMembersStr !== null) {
@@ -142,12 +150,12 @@ export async function updateUser(id: string, formData: FormData) {
       console.log("Parsed familyMembers for update:", updates.familyMembers);
     }
 
-    updates.address = {
-      street: formData.get("street"),
-      city: formData.get("city"),
-      state: formData.get("state"),
-      zip: formData.get("zip"),
-    };
+    const addressFields = ["street", "city", "state", "zip"];
+    addressFields.forEach((field) => {
+      if (formData.has(field)) {
+        updates[`address.${field}`] = formData.get(field);
+      }
+    });
 
     // File Uploads (Optional in Update)
     const profileImageFile = formData.get("profileImage") as File;

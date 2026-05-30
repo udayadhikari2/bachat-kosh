@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 import User from "@/lib/models/User";
 import Deposit from "@/lib/models/Deposit";
 import Notification from "@/lib/models/Notification";
-import { parseNepaliMonth, getDaysInMonth, bsToAd, getCurrentNepaliDate } from "@/lib/utils/nepali-date";
+import { parseNepaliMonth, getDaysInMonth, bsToAd, getCurrentNepaliDate, getNepaliMonthEndAd } from "@/lib/utils/nepali-date";
 import { reconcileMonthlyTotals } from "@/lib/actions/bank-ledger";
 
 export async function getAggregations(params: {
@@ -70,9 +70,7 @@ export async function createAggregation(data: any) {
     const isPastMonth = target.year < currentNepali.year || 
                        (target.year === currentNepali.year && target.month < currentNepali.month);
     if (isPastMonth) {
-      const lastDay = getDaysInMonth(target.year, target.month);
-      finalDate = bsToAd(target.year, target.month, lastDay);
-      finalDate.setHours(23, 59, 59, 999);
+      finalDate = getNepaliMonthEndAd(target.year, target.month);
     }
 
     const agg = await Aggregation.create({
@@ -150,9 +148,7 @@ export async function updateAggregation(id: string, data: any) {
     const isPastMonth = target.year < currentNepali.year || 
                        (target.year === currentNepali.year && target.month < currentNepali.month);
     if (isPastMonth) {
-      const lastDay = getDaysInMonth(target.year, target.month);
-      finalDate = bsToAd(target.year, target.month, lastDay);
-      finalDate.setHours(23, 59, 59, 999);
+      finalDate = getNepaliMonthEndAd(target.year, target.month);
     }
 
     const updated = await Aggregation.findByIdAndUpdate(id, {

@@ -11,7 +11,7 @@ import Organization from "@/lib/models/Organization";
 import AdminAudit from "@/lib/models/AdminAudit";
 import BankLedger from "@/lib/models/BankLedger";
 import Loan from "@/lib/models/Loan";
-import { parseNepaliMonth, getDaysInMonth, bsToAd, NEPALI_MONTHS, adToBs } from "@/lib/utils/nepali-date";
+import { parseNepaliMonth, getDaysInMonth, bsToAd, NEPALI_MONTHS, adToBs, getNepaliMonthStartAd, getNepaliMonthEndAd } from "@/lib/utils/nepali-date";
 import { revalidatePath, unstable_noStore as noStore } from "next/cache";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/auth";
@@ -596,12 +596,8 @@ export async function getAdminDepositStats(organizationId: string, targetMonth?:
           const monthIdx = NEPALI_MONTHS.indexOf(monthName) + 1;
 
           if (monthIdx > 0 && !isNaN(year)) {
-            const daysInMonth = getDaysInMonth(year, monthIdx);
-            startAd = bsToAd(year, monthIdx, 1);
-            endAd = bsToAd(year, monthIdx, daysInMonth);
-
-            startAd.setHours(0, 0, 0, 0);
-            endAd.setHours(23, 59, 59, 999);
+             startAd = getNepaliMonthStartAd(year, monthIdx);
+             endAd = getNepaliMonthEndAd(year, monthIdx);
 
             loanMatchQuery = {
               organizationId: targetIdObj,

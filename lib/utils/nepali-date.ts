@@ -119,3 +119,38 @@ export function compareNepaliMonths(m1: string, m2: string): number {
   }
   return p1.month - p2.month;
 }
+
+export function getNepaliMonthRange(startMonthStr: string, endMonthStr: string): string[] {
+  const months: string[] = [];
+  let current = startMonthStr;
+  let count = 0;
+  while (compareNepaliMonths(current, endMonthStr) <= 0 && count < 240) {
+    months.push(current);
+    current = getNextNepaliMonth(current);
+    count++;
+  }
+  return months;
+}
+
+export function getNepaliMonthStartAd(year: number, month: number): Date {
+  const formatted = `${year}/${month.toString().padStart(2, '0')}/01`;
+  const converted = adbs.bs2ad(formatted);
+  const utcDate = new Date(Date.UTC(converted.year, converted.month - 1, converted.day, 0, 0, 0, 0));
+  // Shift by -5 hours and 45 minutes to align with Nepal Time (UTC+5:45)
+  utcDate.setUTCMinutes(utcDate.getUTCMinutes() - (5 * 60 + 45));
+  return utcDate;
+}
+
+export function getNepaliMonthEndAd(year: number, month: number): Date {
+  let nextM = month + 1;
+  let nextY = year;
+  if (nextM > 12) {
+    nextM = 1;
+    nextY++;
+  }
+  const nextMonthStart = getNepaliMonthStartAd(nextY, nextM);
+  // Subtract 1ms to get the end of the target month
+  nextMonthStart.setUTCMilliseconds(nextMonthStart.getUTCMilliseconds() - 1);
+  return nextMonthStart;
+}
+

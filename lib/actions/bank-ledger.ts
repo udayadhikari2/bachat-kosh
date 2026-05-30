@@ -7,7 +7,7 @@ import Deposit from "@/lib/models/Deposit";
 import Aggregation from "@/lib/models/Aggregation";
 import Loan from "@/lib/models/Loan";
 import Organization from "@/lib/models/Organization";
-import { parseNepaliMonth, bsToAd, getDaysInMonth, NEPALI_MONTHS, getPreviousNepaliMonth, getNextNepaliMonth, getCurrentNepaliDate, compareNepaliMonths } from "@/lib/utils/nepali-date";
+import { parseNepaliMonth, bsToAd, getDaysInMonth, NEPALI_MONTHS, getPreviousNepaliMonth, getNextNepaliMonth, getCurrentNepaliDate, compareNepaliMonths, getNepaliMonthStartAd, getNepaliMonthEndAd } from "@/lib/utils/nepali-date";
 import { revalidatePath } from "next/cache";
 
 export async function getOrganizationBaseline(organizationId: string) {
@@ -107,10 +107,8 @@ export async function updateBankLedger(id: string, data: {
 
     // Query active loan bank charges for the target month
     const target = parseNepaliMonth(ledger.month);
-    const daysInMonth = getDaysInMonth(target.year, target.month);
-    const startDate = bsToAd(target.year, target.month, 1);
-    const endDate = bsToAd(target.year, target.month, daysInMonth);
-    endDate.setHours(23, 59, 59, 999);
+    const startDate = getNepaliMonthStartAd(target.year, target.month);
+    const endDate = getNepaliMonthEndAd(target.year, target.month);
 
     const loanBankCharges = await Loan.aggregate([
       {
@@ -184,11 +182,8 @@ export async function getLedgerEndMonth(organizationId: string): Promise<string>
 
 async function reconcileSingleMonth(organizationId: string, month: string, org: any) {
   const target = parseNepaliMonth(month);
-  const daysInMonth = getDaysInMonth(target.year, target.month);
-
-  const startDate = bsToAd(target.year, target.month, 1);
-  const endDate = bsToAd(target.year, target.month, daysInMonth);
-  endDate.setHours(23, 59, 59, 999);
+  const startDate = getNepaliMonthStartAd(target.year, target.month);
+  const endDate = getNepaliMonthEndAd(target.year, target.month);
 
   const orgIdObj = new mongoose.Types.ObjectId(organizationId);
 
@@ -363,11 +358,8 @@ export async function reconcileMonthlyTotals(organizationId: string, month: stri
     }
     const baselineMonthStr = `${baselineMonth} ${baselineYear}`;
 
-    // If start month is before baseline month, adjust start month to baseline month
-    let currentMonth = month;
-    if (compareNepaliMonths(currentMonth, baselineMonthStr) < 0) {
-      currentMonth = baselineMonthStr;
-    }
+    // Always start reconciliation from the baseline month to prevent cascading ledger mismatches
+    let currentMonth = baselineMonthStr;
 
     const endMonth = await getLedgerEndMonth(organizationId);
     console.log(`[LEDGER RECONCILE CHAIN] Org ${organizationId} from ${currentMonth} to ${endMonth}`);
