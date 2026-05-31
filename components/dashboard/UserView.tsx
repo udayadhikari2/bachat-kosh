@@ -99,21 +99,7 @@ export default function UserView() {
     router.push(`/dashboard?tab=${tab}`);
   };
 
-  if (switchingUser || (loading && !memberData)) {
-    return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4 animate-in fade-in duration-500">
-        <div className="relative">
-          <div className="w-16 h-16 rounded-full border-4 border-emerald-500/10 border-t-emerald-500 animate-spin" />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <PiggyBank className="w-6 h-6 text-emerald-400 animate-pulse" />
-          </div>
-        </div>
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 animate-bounce">
-          Switching Member Account...
-        </p>
-      </div>
-    );
-  }
+  const showLoader = switchingUser || (loading && !memberData);
 
   // Animation variants for tab transitions
   const tabVariants = {
@@ -125,54 +111,75 @@ export default function UserView() {
   return (
     <div className="space-y-6">
       <AnimatePresence mode="wait">
-        <motion.div
-          key={activeTab}
-          initial="initial"
-          animate="animate"
-          exit="exit"
-          variants={tabVariants}
-          transition={{ duration: 0.2 }}
-        >
-          {activeTab === "home" && (
-            <MemberHomeTab
-              memberData={memberData}
-              orgConfig={orgConfig}
-              currentNepaliMonth={currentNepaliMonth}
-              onTabChange={handleTabChange}
-              onOpenDeposit={() => setShowDepositModal(true)}
-              onOpenTransfer={() => handleTabChange("deposit")} // routes to deposit tab
-              onOpenLoanRequest={() => handleTabChange("loans")} // routes to loans tab
-              onOpenLoanRepay={(loanId) => router.push(`/dashboard?tab=loans${loanId ? `&loanId=${loanId}` : ""}`)}
-            />
-          )}
+        {showLoader ? (
+          <motion.div
+            key="loader"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            className="min-h-[60vh] flex flex-col items-center justify-center gap-4"
+          >
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full border-4 border-emerald-500/10 border-t-emerald-500 animate-spin" />
+              <div className="absolute inset-0 flex items-center justify-center">
+                <PiggyBank className="w-6 h-6 text-emerald-400 animate-pulse" />
+              </div>
+            </div>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-2 animate-bounce">
+              Switching Member Account...
+            </p>
+          </motion.div>
+        ) : (
+          <motion.div
+            key={activeTab}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+            variants={tabVariants}
+            transition={{ duration: 0.2 }}
+          >
+            {activeTab === "home" && memberData && (
+              <MemberHomeTab
+                memberData={memberData}
+                orgConfig={orgConfig}
+                currentNepaliMonth={currentNepaliMonth}
+                onTabChange={handleTabChange}
+                onOpenDeposit={() => setShowDepositModal(true)}
+                onOpenTransfer={() => handleTabChange("deposit")} // routes to deposit tab
+                onOpenLoanRequest={() => handleTabChange("loans")} // routes to loans tab
+                onOpenLoanRepay={(loanId) => router.push(`/dashboard?tab=loans${loanId ? `&loanId=${loanId}` : ""}`)}
+              />
+            )}
 
-          {activeTab === "deposit" && (
-            <MemberDepositTab
-              memberData={memberData}
-              orgConfig={orgConfig}
-              currentNepaliMonth={currentNepaliMonth}
-              onOpenDepositForm={() => setShowDepositModal(true)}
-              onRefresh={handleRefresh}
-            />
-          )}
+            {activeTab === "deposit" && memberData && (
+              <MemberDepositTab
+                memberData={memberData}
+                orgConfig={orgConfig}
+                currentNepaliMonth={currentNepaliMonth}
+                onOpenDepositForm={() => setShowDepositModal(true)}
+                onRefresh={handleRefresh}
+              />
+            )}
 
-          {activeTab === "loans" && (
-            <MemberLoansTab
-              memberData={memberData}
-              orgConfig={orgConfig}
-              onRefresh={handleRefresh}
-            />
-          )}
+            {activeTab === "loans" && memberData && (
+              <MemberLoansTab
+                memberData={memberData}
+                orgConfig={orgConfig}
+                onRefresh={handleRefresh}
+              />
+            )}
 
-          {activeTab === "settings" && (
-            <MemberSettingsTab
-              memberData={memberData}
-              activeUserId={activeUserId}
-              onChangeActiveUser={handleActiveUserChange}
-              onRefresh={handleRefresh}
-            />
-          )}
-        </motion.div>
+            {activeTab === "settings" && memberData && (
+              <MemberSettingsTab
+                memberData={memberData}
+                activeUserId={activeUserId}
+                onChangeActiveUser={handleActiveUserChange}
+                onRefresh={handleRefresh}
+              />
+            )}
+          </motion.div>
+        )}
       </AnimatePresence>
 
       {/* Submit Monthly Deposit modal */}

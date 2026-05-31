@@ -136,9 +136,9 @@ export default function MemberHomeTab({
   const totalAssets = stats.totalDeposits + stats.currentAdvanceBalance;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Welcome & Info Segment */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-5 backdrop-blur-md relative overflow-hidden">
+      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[10px] p-3 backdrop-blur-md relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-3xl rounded-[8px]" />
         <div className="flex items-center gap-4 relative z-10">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-cyan-600 p-[1px] relative shadow-lg">
@@ -171,9 +171,9 @@ export default function MemberHomeTab({
       {/* Personal Account Portfolio Section */}
       <div className="space-y-3">
         <h3 className="text-[9px] font-black uppercase text-slate-500 tracking-widest px-2">Personal Account Portfolio</h3>
-        <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
           {/* Card 1: Total Savings */}
-          <div className="col-span-2 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
+          <div className="col-span-1 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
             <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 blur-3xl rounded-full" />
             <div className="flex justify-between gap-4 items-center">
               <div className="flex items-center gap-4">
@@ -200,7 +200,7 @@ export default function MemberHomeTab({
           </div>
 
           {/* Card 2: Advance Balance */}
-          <div className="col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
+          <div className="col-span-1 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
             <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 blur-3xl rounded-full" />
             <div className="flex justify-between gap-4 items-center">
               <div className="flex flex-row items-start gap-4">
@@ -224,7 +224,7 @@ export default function MemberHomeTab({
           </div>
 
           {/* Card 3: Saving Status */}
-          <div className="col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
+          <div className="col-span-1 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
             <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/5 blur-3xl rounded-full" />
             <div className="flex justify-between gap-4 items-center">
               <div className="flex flex-row items-start gap-4 ">
@@ -269,9 +269,9 @@ export default function MemberHomeTab({
           </span>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-1 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-4">
           {/* Card 1: Organization Collection */}
-          <div className="col-span-2 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
+          <div className="col-span-1 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
             <div className="absolute top-0 right-0 w-20 h-20 bg-emerald-500/5 blur-3xl rounded-full" />
             <div className="flex justify-between gap-4 items-center">
               <div className="flex items-center gap-4">
@@ -297,7 +297,7 @@ export default function MemberHomeTab({
           </div>
 
           {/* Card 2: Closing Balance (Available Funds) */}
-          <div className="col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
+          <div className="col-span-1 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
             <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 blur-3xl rounded-full" />
             <div className="flex justify-between gap-4 items-center">
               <div className="flex items-center gap-4">
@@ -323,7 +323,7 @@ export default function MemberHomeTab({
           </div>
 
           {/* Card 3: Net Assets per Member */}
-          <div className="col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
+          <div className="col-span-1 md:col-span-1 bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800/80 p-3 rounded-3xl relative overflow-hidden group shadow-xl flex flex-col justify-between min-h-[50px]">
             <div className="absolute top-0 right-0 w-20 h-20 bg-amber-500/5 blur-3xl rounded-full" />
             <div className="flex justify-between gap-4 items-center">
               <div className="flex items-center gap-4">
