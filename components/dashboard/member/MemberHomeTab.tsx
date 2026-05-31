@@ -138,7 +138,7 @@ export default function MemberHomeTab({
   return (
     <div className="space-y-4">
       {/* Welcome & Info Segment */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[10px] p-3 backdrop-blur-md relative overflow-hidden">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[10px] p-3 md:backdrop-blur-md relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-3xl rounded-[8px]" />
         <div className="flex items-center gap-4 relative z-10">
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-cyan-600 p-[1px] relative shadow-lg">
@@ -364,7 +364,7 @@ export default function MemberHomeTab({
               key={i}
               onClick={act.action}
               disabled={act.disabled}
-              className={`flex flex-col items-center p-3 rounded-2xl border transition-all active:scale-95 disabled:opacity-30 disabled:pointer-events-none ${act.color}`}
+              className={`flex flex-col items-center p-3 rounded-2xl border transition-colors disabled:opacity-30 disabled:pointer-events-none ${act.color}`}
             >
               <act.icon className="w-5 h-5 mb-1.5" />
               <span className="text-[8px] font-black uppercase tracking-wider text-center leading-tight">{act.label}</span>
@@ -547,7 +547,7 @@ export default function MemberHomeTab({
       }
 
       {/* Recent Activity Timeline */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xs font-black uppercase text-white tracking-widest">Recent Activity</h3>
           <button

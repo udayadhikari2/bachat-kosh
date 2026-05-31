@@ -115,7 +115,7 @@ export default function UserView() {
           </p>
         </div>
       ) : (
-        <div className="transition-all duration-300 animate-in fade-in duration-300">
+        <div>
           {activeTab === "home" && memberData && (
             <MemberHomeTab
               memberData={memberData}

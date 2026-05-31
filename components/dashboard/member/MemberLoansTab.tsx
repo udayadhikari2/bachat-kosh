@@ -207,7 +207,7 @@ export default function MemberLoansTab({
         <div className="space-y-6">
           {activeLoans.length === 0 ? (
             /* Empty state for active loans */
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-8 text-center backdrop-blur-sm space-y-6">
+            <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-8 text-center md:backdrop-blur-sm space-y-6">
               <div className="w-16 h-16 bg-slate-950 rounded-2xl flex items-center justify-center border border-slate-800 mx-auto">
                 <HandCoins className="w-8 h-8 text-slate-600" />
               </div>
@@ -321,7 +321,7 @@ export default function MemberLoansTab({
                   </div>
 
                   {/* Repayment Timeline History on this loan */}
-                  <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md">
+                  <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
                     <h3 className="text-xs font-black uppercase text-white tracking-widest mb-6">Repayments timeline</h3>
                     
                     {repayments.length === 0 ? (
@@ -366,7 +366,7 @@ export default function MemberLoansTab({
 
           {/* Pending Applications list */}
           {pendingLoans.length > 0 && (
-            <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md">
+            <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
               <h3 className="text-xs font-black uppercase text-amber-500 tracking-widest mb-4">Pending Requests</h3>
               <div className="space-y-3">
                 {pendingLoans.map((l: any) => (
@@ -394,7 +394,7 @@ export default function MemberLoansTab({
           )}
 
           {/* Historical Loans archive */}
-          <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md">
+          <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
             <h3 className="text-xs font-black uppercase text-white tracking-widest mb-6">Historical Loans</h3>
             
             {loanHistory.length === 0 ? (

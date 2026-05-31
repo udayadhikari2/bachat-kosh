@@ -146,7 +146,7 @@ export default function MemberDepositTab({
   return (
     <div className="space-y-6">
       {/* Month Status Card */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md relative overflow-hidden">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md relative overflow-hidden">
         <div className="flex justify-between items-start">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-2xl flex items-center justify-center">
@@ -226,7 +226,7 @@ export default function MemberDepositTab({
       </div>
 
       {/* Timeline List of Deposits */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
         <div className="flex justify-between items-center mb-6">
           <h3 className="text-xs font-black uppercase text-white tracking-widest">Savings History</h3>
           <div className="relative w-28 group">

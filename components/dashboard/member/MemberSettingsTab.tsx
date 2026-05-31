@@ -143,7 +143,7 @@ export default function MemberSettingsTab({
     <div className="space-y-6">
       {/* Account Profile Switcher for Guardians */}
       {isSessionUserGuardian && (
-        <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md space-y-4">
+        <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md space-y-4">
           <div className="flex items-center gap-2.5">
             <Users className="w-5 h-5 text-indigo-400" />
             <div>
@@ -215,7 +215,7 @@ export default function MemberSettingsTab({
       )}
 
       {/* Profile info edit form */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
         <h3 className="text-xs font-black uppercase text-white tracking-widest mb-6">Profile Settings</h3>
         
         <form onSubmit={handleUpdateProfile} className="space-y-4">
@@ -272,7 +272,7 @@ export default function MemberSettingsTab({
       </div>
 
       {/* Notification Preferences */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md space-y-4">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md space-y-4">
         <div className="flex items-center gap-2.5">
           <Bell className="w-5 h-5 text-emerald-400" />
           <h3 className="text-xs font-black uppercase text-white tracking-widest">Notification Preferences</h3>
@@ -299,7 +299,7 @@ export default function MemberSettingsTab({
       </div>
 
       {/* Help, Disputes & Support */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md space-y-5">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md space-y-5">
         <div className="flex items-center gap-2.5">
           <HelpCircle className="w-5 h-5 text-indigo-400" />
           <h3 className="text-xs font-black uppercase text-white tracking-widest">Disputes & Support</h3>
@@ -342,7 +342,7 @@ export default function MemberSettingsTab({
       </div>
 
       {/* Security Actions */}
-      <div className="bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 backdrop-blur-md flex flex-col gap-3">
+      <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md flex flex-col gap-3">
         <button
           onClick={() => signOut()}
           className="w-full py-4 bg-rose-500/10 hover:bg-rose-600 text-rose-500 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2 border border-rose-500/20 hover:border-transparent active:scale-95"

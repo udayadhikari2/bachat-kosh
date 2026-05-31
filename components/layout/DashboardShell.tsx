@@ -121,7 +121,7 @@ function MemberShell({ children, user, notificationsOpen, setNotificationsOpen }
       <div className="flex-1 w-full max-w-md mx-auto bg-slate-950 md:border-x md:border-slate-900 flex flex-col pb-20 shadow-[0_0_80px_rgba(0,0,0,0.8)] min-h-screen relative">
         
         {/* Top Header */}
-        <header className="h-16 border-b border-slate-900/60 flex items-center justify-between px-6 bg-slate-950/80 backdrop-blur-xl sticky top-0 z-40">
+        <header className="h-16 border-b border-slate-900/60 flex items-center justify-between px-6 bg-slate-950 md:bg-slate-950/80 md:backdrop-blur-xl sticky top-0 z-40">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-600 to-cyan-600 p-[1px] shadow-lg shadow-emerald-500/10">
               <div className="w-full h-full bg-slate-950 rounded-[9px] flex items-center justify-center font-black text-white text-xs">
@@ -179,7 +179,7 @@ function BottomNav() {
   ];
 
   return (
-    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-40 bg-slate-950/90 backdrop-blur-xl border-t border-slate-900/80 py-2.5 px-6 rounded-t-2xl shadow-[0_-8px_24px_rgba(0,0,0,0.5)] overflow-visible">
+    <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-40 bg-slate-950 md:bg-slate-950/90 md:backdrop-blur-xl border-t border-slate-900/80 py-2.5 px-6 rounded-t-2xl shadow-[0_-8px_24px_rgba(0,0,0,0.5)] overflow-visible">
       <div className="flex items-center justify-between w-full overflow-visible">
         {tabs.map((tab) => {
           const Icon = tab.icon;
