@@ -351,7 +351,7 @@ export default function MemberHomeTab({
       </div>
 
       {/* Quick Action Dock */}
-      <div className="bg-slate-900/20 border border-slate-900 p-4 rounded-3xl">
+      {/* <div className="bg-slate-900/20 border border-slate-900 p-4 rounded-3xl">
         <h3 className="text-[9px] font-black uppercase text-slate-500 tracking-widest px-2 mb-3">Quick Actions</h3>
         <div className="grid grid-cols-4 gap-2">
           {[
@@ -371,7 +371,7 @@ export default function MemberHomeTab({
             </button>
           ))}
         </div>
-      </div>
+      </div> */}
 
       {/* Active Loan Reminder Card */}
       {
