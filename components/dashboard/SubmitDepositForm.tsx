@@ -15,7 +15,7 @@ import {
   ChevronDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { adToBs, getCurrentNepaliDate, parseNepaliMonth, getDaysInMonth, bsToAd, getNepaliMonthRange, getPreviousNepaliMonth, compareNepaliMonths } from "@/lib/utils/nepali-date";
+import { adToBs, getCurrentNepaliDate, parseNepaliMonth, getDaysInMonth, bsToAd, getNepaliMonthRange, getPreviousNepaliMonth, getNextNepaliMonth, compareNepaliMonths, getNepaliMonthStartAd } from "@/lib/utils/nepali-date";
 import NepaliDatePicker from "./NepaliDatePicker";
 import { createDeposit } from "@/lib/actions/deposit";
 import { getUserBalance } from "@/lib/actions/user";
@@ -51,6 +51,8 @@ export default function SubmitDepositForm({
   const [inputAmount, setInputAmount] = useState<number>(defaultAmount || 0);
   const [fineApplied, setFineApplied] = useState(0);
   const [remarks, setRemarks] = useState("");
+  const [proof, setProof] = useState("");
+  const [isInitialized, setIsInitialized] = useState(false);
 
   const { data: session } = useSession();
 
@@ -61,7 +63,7 @@ export default function SubmitDepositForm({
     const initialYear = orgConfig.financials?.initialOpeningYear;
     if (!initialMonth || !initialYear) return [];
     
-    const startMonthStr = `${initialMonth} ${initialYear}`;
+    const startMonthStr = getNextNepaliMonth(`${initialMonth} ${initialYear}`);
     const monthsRange = getNepaliMonthRange(startMonthStr, currentMonth);
     
     const timeline = memberData?.timeline || [];
@@ -76,43 +78,23 @@ export default function SubmitDepositForm({
     });
   })();
 
-  const prevMonthStr = currentMonth ? getPreviousNepaliMonth(currentMonth) : "";
-  const isPrevMonthUnpaid = prevMonthStr ? unpaidMonths.includes(prevMonthStr) : false;
-  
-  // Months list to show in select dropdown
-  const availableDropdownMonths = Array.from(new Set([...unpaidMonths, currentMonth])).sort((a, b) => compareNepaliMonths(a, b));
+  const previousUnpaidMonths = unpaidMonths.filter(m => m !== currentMonth);
+  const hasPreviousUnpaid = previousUnpaidMonths.length > 0;
 
-  useEffect(() => {
-    if (orgConfig && currentMonth) {
-      const initialMonth = orgConfig.financials?.initialOpeningMonth;
-      const initialYear = orgConfig.financials?.initialOpeningYear;
-      if (initialMonth && initialYear) {
-        const startMonthStr = `${initialMonth} ${initialYear}`;
-        const monthsRange = getNepaliMonthRange(startMonthStr, currentMonth);
-        const timeline = memberData?.timeline || [];
-        const unpaid = monthsRange.filter(mStr => {
-          const hasDeposit = timeline.some(
-            (item: any) => 
-              item.type === "DEPOSIT" && 
-              item.month === mStr && 
-              (item.status === "APPROVED" || item.status === "PENDING")
-          );
-          return !hasDeposit;
-        });
-
-        if (unpaid.length > 0) {
-          setBsMonth(unpaid[0]); // default to oldest unpaid month
-        } else {
-          setBsMonth(currentMonth);
-        }
-      } else {
-        setBsMonth(currentMonth);
-      }
-    } else {
-      const bs = getCurrentNepaliDate();
-      setBsMonth(currentMonth || `${bs.monthName} ${bs.year}`);
+  // Image Upload handler
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setProof(reader.result as string);
+      };
+      reader.readAsDataURL(file);
     }
+  };
 
+  // 2. Fetch config and balance once when session loads
+  useEffect(() => {
     if (session?.user) {
       const user = session.user as any;
       Promise.all([
@@ -120,13 +102,48 @@ export default function SubmitDepositForm({
         getOrganization(user.organizationId)
       ]).then(([balanceRes, orgRes]) => {
         if (balanceRes.success) setUserBalance(balanceRes.balance || 0);
-        if (orgRes.success) {
-          setOrgConfig(orgRes.data.config);
-          setInputAmount(orgRes.data.config?.monthlyDepositAmount || defaultAmount || 0);
+        if (orgRes.success && orgRes.data?.config) {
+          setOrgConfig({ ...orgRes.data.config, financials: orgRes.data.financials });
         }
       });
     }
-  }, [session, defaultAmount, orgConfig, currentMonth, memberData]);
+  }, [session]);
+
+  // 3. Initialize default values once when config is loaded
+  useEffect(() => {
+    if (!orgConfig || isInitialized) return;
+
+    setInputAmount(orgConfig.monthlyDepositAmount || defaultAmount || 0);
+
+    const initialMonth = orgConfig.financials?.initialOpeningMonth;
+    const initialYear = orgConfig.financials?.initialOpeningYear;
+    if (initialMonth && initialYear && currentMonth) {
+      const startMonthStr = getNextNepaliMonth(`${initialMonth} ${initialYear}`);
+      const monthsRange = getNepaliMonthRange(startMonthStr, currentMonth);
+      const timeline = memberData?.timeline || [];
+      const unpaid = monthsRange.filter(mStr => {
+        const hasDeposit = timeline.some(
+          (item: any) => 
+            item.type === "DEPOSIT" && 
+            item.month === mStr && 
+            (item.status === "APPROVED" || item.status === "PENDING")
+        );
+        return !hasDeposit;
+      });
+
+      const prevUnpaid = unpaid.filter(m => m !== currentMonth);
+
+      if (prevUnpaid.length > 0) {
+        setBsMonth(prevUnpaid[0]); // default to oldest unpaid month
+      } else {
+        setBsMonth(currentMonth);
+      }
+    } else {
+      setBsMonth(currentMonth);
+    }
+
+    setIsInitialized(true);
+  }, [orgConfig, currentMonth, memberData, defaultAmount, isInitialized]);
 
   // Safeguard deposit type for previous months
   useEffect(() => {
@@ -148,6 +165,34 @@ export default function SubmitDepositForm({
     }
   }, [bsMonth]);
 
+  // Auto-set transaction amount based on monthly goal + calculated fine when target month or payment date changes
+  useEffect(() => {
+    if (!orgConfig || !bsMonth) return;
+    
+    try {
+      const requiredBase = depositType === "MONTHLY" ? (orgConfig.monthlyDepositAmount || defaultAmount || 0) : 0;
+      
+      const target = parseNepaliMonth(bsMonth);
+      const daysInMonth = getDaysInMonth(target.year, target.month);
+      const lastDayAd = bsToAd(target.year, target.month, daysInMonth);
+      lastDayAd.setHours(23, 59, 59, 999);
+
+      const isLate = new Date(paymentDate) > lastDayAd;
+      let fine = 0;
+      if (isLate && depositType === "MONTHLY") {
+        const paymentBs = adToBs(paymentDate);
+        const totalMonthsTarget = target.year * 12 + target.month;
+        const totalMonthsPayment = paymentBs.year * 12 + paymentBs.month;
+        const monthsDiff = Math.max(1, totalMonthsPayment - totalMonthsTarget);
+        fine = monthsDiff * orgConfig.lateFee;
+      }
+      
+      setInputAmount(requiredBase + fine);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [bsMonth, paymentDate, depositType, orgConfig, defaultAmount]);
+
   const requiredBase = depositType === "MONTHLY" ? (orgConfig?.monthlyDepositAmount || defaultAmount || 0) : 0;
 
   useEffect(() => {
@@ -164,7 +209,14 @@ export default function SubmitDepositForm({
       lastDayAd.setHours(23, 59, 59, 999);
 
       const isLate = new Date(paymentDate) > lastDayAd;
-      const fine = isLate ? orgConfig.lateFee : 0;
+      let fine = 0;
+      if (isLate) {
+        const paymentBs = adToBs(paymentDate);
+        const totalMonthsTarget = target.year * 12 + target.month;
+        const totalMonthsPayment = paymentBs.year * 12 + paymentBs.month;
+        const monthsDiff = Math.max(1, totalMonthsPayment - totalMonthsTarget);
+        fine = monthsDiff * orgConfig.lateFee;
+      }
       setFineApplied(fine);
 
       const totalRequired = requiredBase + fine;
@@ -182,6 +234,17 @@ export default function SubmitDepositForm({
 
   const totalRequired = requiredBase + fineApplied;
   const isInsufficient = depositType === "MONTHLY" && ((inputAmount || 0) + (useCredit ? creditUsed : 0)) < totalRequired;
+
+  const minDate = (() => {
+    if (!bsMonth) return undefined;
+    try {
+      const parsed = parseNepaliMonth(bsMonth);
+      const startAd = getNepaliMonthStartAd(parsed.year, parsed.month);
+      return startAd.toISOString();
+    } catch {
+      return undefined;
+    }
+  })();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -213,7 +276,7 @@ export default function SubmitDepositForm({
       remarks,
       proof: (useCredit && creditUsed >= totalRequired)
         ? "CREDIT_PAYMENT"
-        : "https://placehold.co/600x400/000000/FFFFFF/png?text=Transaction+Proof"
+        : (proof || "https://placehold.co/600x400/000000/FFFFFF/png?text=Transaction+Proof")
     });
 
     if (result.success) {
@@ -296,6 +359,13 @@ export default function SubmitDepositForm({
         </div>
 
         <form onSubmit={handleSubmit} className="p-8 space-y-6">
+          {hasPreviousUnpaid && (
+            <div className="p-4 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center gap-3 text-amber-400 text-xs font-bold uppercase tracking-tight">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>Reminder: You must pay for previous unpaid months first.</span>
+            </div>
+          )}
+
           {error && (
             <div className="p-4 bg-rose-500/10 border border-rose-500/20 rounded-2xl flex items-center gap-3 text-rose-500 text-xs font-bold uppercase tracking-tight">
               <AlertCircle className="w-4 h-4" /> {error}
@@ -305,16 +375,16 @@ export default function SubmitDepositForm({
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/[0.03] border border-white/5 p-4 rounded-2xl flex flex-col justify-center relative overflow-hidden group">
               <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1.5">Target Month</p>
-              {isPrevMonthUnpaid ? (
+              {hasPreviousUnpaid ? (
                 <div className="relative mt-1">
                   <select
                     value={bsMonth}
                     onChange={(e) => setBsMonth(e.target.value)}
                     className="appearance-none w-full bg-slate-900 border border-white/10 rounded-xl px-4 py-2.5 text-xs text-white outline-none focus:border-emerald-500/50 cursor-pointer font-bold pr-8"
                   >
-                    {availableDropdownMonths.map((m) => (
+                    {previousUnpaidMonths.map((m) => (
                       <option key={m} value={m} className="bg-slate-950 text-white">
-                        {m} {m === currentMonth ? "(Current)" : ""}
+                        {m}
                       </option>
                     ))}
                   </select>
@@ -353,23 +423,13 @@ export default function SubmitDepositForm({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Type</label>
-                <select
-                  value={depositType}
-                  onChange={(e) => setDepositType(e.target.value as any)}
-                  className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-5 py-3 text-emerald-400 font-black tracking-widest uppercase text-[11px] outline-none"
-                >
-                  <option value="MONTHLY">Monthly Savings</option>
-                  {bsMonth === currentMonth && (
-                    <>
-                      <option value="SERVICE_CHARGE">Service Charge</option>
-                      <option value="LOAN_INTEREST">Loan Interest</option>
-                    </>
-                  )}
-                </select>
+                <div className="w-full bg-white/[0.03] border border-white/5 rounded-xl px-5 py-3.5 text-emerald-400 font-black tracking-widest uppercase text-[11px] outline-none">
+                  Monthly Savings
+                </div>
               </div>
               <div className="space-y-3">
                 <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em] ml-2">Payment Date</label>
-                <NepaliDatePicker value={paymentDate} onChange={setPaymentDate} />
+                <NepaliDatePicker value={paymentDate} onChange={setPaymentDate} minDate={minDate} />
               </div>
             </div>
 
@@ -452,9 +512,26 @@ export default function SubmitDepositForm({
                   <p className="text-sm font-black text-emerald-400 uppercase tracking-widest">Paid via Credit</p>
                 </div>
               ) : (
-                <div className="w-full py-16 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[40px] flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-500/5 transition-all">
-                  <UploadCloud className="w-8 h-8 text-slate-600 mb-4" />
-                  <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">Drop or Capture Proof</p>
+                <div className="relative w-full py-16 bg-white/[0.02] border-2 border-dashed border-white/5 rounded-[40px] flex flex-col items-center justify-center cursor-pointer hover:bg-emerald-500/5 transition-all group">
+                  <input 
+                    type="file" 
+                    onChange={handleImageUpload} 
+                    accept="image/*" 
+                    className="absolute inset-0 w-full h-full opacity-0 z-10 cursor-pointer" 
+                  />
+                  {proof ? (
+                    <>
+                      <CheckCircle2 className="w-8 h-8 text-emerald-500 mb-4" />
+                      <p className="text-[11px] text-emerald-400 font-black uppercase tracking-widest">Evidence Attached</p>
+                      <p className="text-[9px] text-slate-500 font-medium mt-1">Click or drag to replace file</p>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-8 h-8 text-slate-600 mb-4 group-hover:text-emerald-500 transition-colors" />
+                      <p className="text-[11px] text-slate-500 font-black uppercase tracking-widest">Upload Proof Image</p>
+                      <p className="text-[9px] text-slate-500 font-medium mt-1">Select receipt or deposit slip</p>
+                    </>
+                  )}
                 </div>
               )}
             </div>

@@ -63,7 +63,7 @@ export default function UserView() {
         if (orgId) {
           const orgRes = await getOrganization(orgId);
           if (orgRes.success) {
-            setOrgConfig(orgRes.data.config);
+            setOrgConfig({ ...orgRes.data.config, financials: orgRes.data.financials });
           }
         }
       } else {

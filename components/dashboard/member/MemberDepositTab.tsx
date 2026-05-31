@@ -14,10 +14,17 @@ import {
   User as UserIcon,
   Loader2,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  ChevronDown,
+  ChevronUp,
+  Eye,
+  FileText,
+  AlertTriangle,
+  TrendingUp
 } from "lucide-react";
 import { getUsersByOrg } from "@/lib/actions/user";
 import { transferMemberCreditDirect } from "@/lib/actions/aggregation";
+import { getNepaliMonthRange, getPreviousNepaliMonth, getNextNepaliMonth, compareNepaliMonths, adToBs } from "@/lib/utils/nepali-date";
 import toast from "react-hot-toast";
 
 interface MemberDepositTabProps {
@@ -38,6 +45,110 @@ export default function MemberDepositTab({
   const user = memberData?.user || {};
   const stats = memberData?.stats || { totalDeposits: 0, activeLoans: 0, totalLoanPaid: 0, currentAdvanceBalance: 0 };
   const deposits = (memberData?.timeline || []).filter((item: any) => item.type === "DEPOSIT");
+
+  // Expanded History Item State
+  const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
+  // View proof modal state
+  const [activeProofUrl, setActiveProofUrl] = useState<string | null>(null);
+
+  // Unpaid months calculations
+  const unpaidMonths = (() => {
+    if (!currentNepaliMonth || !orgConfig) return [];
+    const initialMonth = orgConfig.financials?.initialOpeningMonth;
+    const initialYear = orgConfig.financials?.initialOpeningYear;
+    if (!initialMonth || !initialYear) return [];
+    
+    const startMonthStr = getNextNepaliMonth(`${initialMonth} ${initialYear}`);
+    const monthsRange = getNepaliMonthRange(startMonthStr, currentNepaliMonth);
+    
+    const timeline = memberData?.timeline || [];
+    return monthsRange.filter(mStr => {
+      const hasDeposit = timeline.some(
+        (item: any) => 
+          item.type === "DEPOSIT" && 
+          item.month === mStr && 
+          (item.status === "APPROVED" || item.status === "PENDING")
+      );
+      return !hasDeposit;
+    });
+  })();
+
+  const previousUnpaidMonths = unpaidMonths.filter(m => m !== currentNepaliMonth);
+
+  const formatNepaliDate = (dateVal: string | Date) => {
+    const bs = adToBs(dateVal);
+    if (bs.year === 0) return "N/A";
+    return `${bs.monthName} ${bs.day}, ${bs.year}`;
+  };
+
+  const formatADDate = (dateVal: string | Date) => {
+    const d = new Date(dateVal);
+    if (isNaN(d.getTime())) return "N/A";
+    return d.toLocaleDateString("en-US", { day: "numeric", month: "short", year: "numeric" });
+  };
+
+  const getDisplayDetails = (item: any) => {
+    const titleLower = item.title?.toLowerCase() || "";
+    const detailsLower = item.details?.toLowerCase() || "";
+    const depType = item.depositType || "";
+
+    if (depType === "MONTHLY" || titleLower.includes("monthly")) {
+      return {
+        title: "Monthly Savings",
+        subtitle: `${item.month || "Obligation"}`,
+        icon: PiggyBank,
+        colorClass: "text-emerald-400",
+        bgClass: "bg-emerald-500/10 border-emerald-500/20 text-emerald-400",
+        leftBorder: "border-l-emerald-500",
+        typeLabel: "Obligation Deposit"
+      };
+    }
+
+    if (titleLower.includes("transfer") || detailsLower.includes("transfer") || item.advancedPayment < 0) {
+      const isSent = item.advancedPayment < 0 || detailsLower.includes("transfer to") || detailsLower.includes("sent");
+      
+      let summary = item.month || "Credit Transfer";
+      if (detailsLower.includes("transferred") && detailsLower.includes("credit to")) {
+        const matches = item.details.match(/to\s+([^\(]+)/i);
+        if (matches && matches[1]) summary = `To ${matches[1].trim()}`;
+      } else if (detailsLower.includes("received") && detailsLower.includes("credit from")) {
+        const matches = item.details.match(/from\s+([^\(]+)/i);
+        if (matches && matches[1]) summary = `From ${matches[1].trim()}`;
+      }
+
+      return {
+        title: isSent ? "Sent Credit" : "Received Credit",
+        subtitle: summary,
+        icon: ArrowRightLeft,
+        colorClass: isSent ? "text-rose-400" : "text-indigo-400",
+        bgClass: isSent ? "bg-rose-500/10 border-rose-500/20 text-rose-455" : "bg-indigo-500/10 border-indigo-500/20 text-indigo-400",
+        leftBorder: isSent ? "border-l-rose-500" : "border-l-indigo-500",
+        typeLabel: isSent ? "Transfer (Out)" : "Transfer (In)"
+      };
+    }
+
+    if (depType === "ADVANCE" || titleLower.includes("advance") || detailsLower.includes("aggregation")) {
+      return {
+        title: "Credit Added",
+        subtitle: item.month || "Advance Funding",
+        icon: TrendingUp,
+        colorClass: "text-blue-400",
+        bgClass: "bg-blue-500/10 border-blue-500/20 text-blue-400",
+        leftBorder: "border-l-blue-500",
+        typeLabel: "Cooperative Credit"
+      };
+    }
+
+    return {
+      title: item.title || "Savings Deposit",
+      subtitle: item.month || "Adjustment",
+      icon: PiggyBank,
+      colorClass: "text-slate-400",
+      bgClass: "bg-slate-800 border-slate-700 text-slate-400",
+      leftBorder: "border-l-slate-700",
+      typeLabel: "Adjustment"
+    };
+  };
 
   // Transfer Credit State
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -145,6 +256,26 @@ export default function MemberDepositTab({
 
   return (
     <div className="space-y-6">
+      {/* Unpaid Month Reminder Banner */}
+      {previousUnpaidMonths.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-[24px] p-5 flex items-start gap-4 shadow-lg shadow-amber-500/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 blur-2xl rounded-full" />
+          <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center shrink-0 mt-0.5">
+            <AlertTriangle className="w-5 h-5 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-xs font-black text-white uppercase tracking-wider">Unpaid Deposits Reminder</h3>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              You have unpaid monthly deposits for the following previous month(s):{" "}
+              <span className="font-bold text-amber-400">
+                {previousUnpaidMonths.join(", ")}
+              </span>.
+              Please register deposit requests for these periods first.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Month Status Card */}
       <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md relative overflow-hidden">
         <div className="flex justify-between items-start">
@@ -171,12 +302,15 @@ export default function MemberDepositTab({
           </span>
         </div>
 
-        {depositStatus !== "APPROVED" && (
+        {(depositStatus !== "APPROVED" || previousUnpaidMonths.length > 0) && (
           <div className="mt-6 pt-5 border-t border-slate-800/60 space-y-4">
             <div className="flex items-center gap-2.5 text-xs text-slate-400">
               <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
               <span>
-                Required saving: <span className="font-bold text-white">Rs. {orgConfig?.monthlyDepositAmount || 1000}</span>.
+                {previousUnpaidMonths.length > 0 
+                  ? `You have ${previousUnpaidMonths.length} unpaid previous month(s). Required saving: `
+                  : "Required saving: "}
+                <span className="font-bold text-white">Rs. {orgConfig?.monthlyDepositAmount || 1000}</span>.
               </span>
             </div>
             <button
@@ -189,7 +323,7 @@ export default function MemberDepositTab({
           </div>
         )}
 
-        {depositStatus === "APPROVED" && (
+        {depositStatus === "APPROVED" && previousUnpaidMonths.length === 0 && (
           <div className="mt-6 pt-4 border-t border-slate-800/60 flex items-center gap-2.5 text-xs text-emerald-400 bg-emerald-500/5 px-4 py-3 rounded-2xl border border-emerald-500/10">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span>Monthly savings obligation completed for this period.</span>
@@ -228,15 +362,18 @@ export default function MemberDepositTab({
       {/* Timeline List of Deposits */}
       <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
         <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xs font-black uppercase text-white tracking-widest">Savings History</h3>
-          <div className="relative w-28 group">
-            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-600 group-focus-within:text-emerald-500 transition-colors" />
+          <div className="space-y-1">
+            <h3 className="text-xs font-black uppercase text-white tracking-widest">Savings History</h3>
+            <p className="text-[8px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">Obligations and transfers logs</p>
+          </div>
+          <div className="relative w-32 group">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-600 group-focus-within:text-emerald-500 transition-colors" />
             <input 
               type="text"
-              placeholder="Search month"
+              placeholder="Search by month..."
               value={historySearch}
               onChange={(e) => setHistorySearch(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-850 rounded-lg pl-8 pr-2 py-1 text-[8px] font-bold text-white outline-none focus:border-emerald-500/50"
+              className="w-full bg-slate-950 border border-slate-850 rounded-xl pl-9 pr-3 py-1.5 text-[9px] font-bold text-white outline-none focus:border-emerald-500/50 transition-all placeholder:text-slate-700"
             />
           </div>
         </div>
@@ -247,56 +384,155 @@ export default function MemberDepositTab({
           </div>
         ) : (
           <div className="space-y-4">
-            {filteredTimeline.map((item: any) => (
-              <div key={item.id} className="p-4 bg-black/20 border border-white/5 rounded-2xl space-y-2">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className="text-xs font-black text-white">{item.title}</span>
-                    <span className="text-[9px] text-slate-500 font-bold block mt-0.5">{item.month}</span>
+            {filteredTimeline.map((item: any) => {
+              const isExpanded = expandedItemId === item.id;
+              const ui = getDisplayDetails(item);
+              
+              // Status Styling
+              let statusColor = "bg-slate-800 text-slate-400 border-slate-700";
+              if (item.status === "APPROVED") {
+                statusColor = "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
+              } else if (item.status === "PENDING") {
+                statusColor = "bg-amber-500/10 text-amber-400 border-amber-500/20";
+              } else if (item.status === "REJECTED") {
+                statusColor = "bg-rose-500/10 text-rose-455 border-rose-500/20";
+              }
+
+              const DisplayIcon = ui.icon;
+
+              return (
+                <div 
+                  key={item.id} 
+                  className={`bg-slate-950/40 border border-white/5 rounded-[24px] overflow-hidden transition-all duration-300 ${isExpanded ? "ring-2 ring-emerald-500/20 shadow-lg" : "hover:bg-slate-950/60"}`}
+                >
+                  {/* Row Header */}
+                  <div 
+                    onClick={() => setExpandedItemId(isExpanded ? null : item.id)}
+                    className={`p-5 md:p-6 flex items-start gap-4 cursor-pointer border-l-4 ${ui.leftBorder} transition-colors`}
+                  >
+                    {/* Icon */}
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 border ${ui.bgClass}`}>
+                      <DisplayIcon className="w-5 h-5" />
+                    </div>
+
+                    {/* Content Block */}
+                    <div className="flex-1 min-w-0 space-y-2">
+                      {/* Top Row: Title & Amount */}
+                      <div className="flex justify-between items-start gap-3">
+                        <div className="min-w-0">
+                          <h4 className="text-xs md:text-sm font-black text-white uppercase tracking-tight truncate">
+                            {ui.title}
+                          </h4>
+                          <p className="text-[10px] md:text-xs text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                            {ui.subtitle}
+                          </p>
+                        </div>
+                        <div className="text-right shrink-0">
+                          <span className={`text-xs md:text-base font-black block ${item.advancedPayment < 0 ? "text-rose-400" : "text-white"}`}>
+                            {item.advancedPayment < 0 ? "-" : ""} Rs. {Math.abs(item.amount || item.advancedPayment).toLocaleString()}
+                          </span>
+                          <span className="text-[9px] md:text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5 block">
+                            {ui.typeLabel}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Bottom Row: Dates & Status */}
+                      <div className="flex flex-wrap items-center justify-between gap-3 pt-1.5 border-t border-white/[0.03]">
+                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] md:text-xs text-slate-400 font-medium">
+                          <span className="font-bold text-slate-300">{formatNepaliDate(item.date)} BS</span>
+                          <span className="text-slate-600">•</span>
+                          <span>{formatADDate(item.date)} AD</span>
+                        </div>
+
+                        <div className="flex items-center gap-3.5">
+                          <span className={`text-[8.5px] md:text-[10px] font-black uppercase tracking-widest py-0.5 px-2.5 rounded border text-center ${statusColor}`}>
+                            {item.status}
+                          </span>
+                          <div className="text-slate-600">
+                            {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
-                  <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${
-                    item.status === "APPROVED"
-                      ? "bg-emerald-500/10 text-emerald-400"
-                      : item.status === "PENDING"
-                        ? "bg-amber-500/10 text-amber-400"
-                        : "bg-rose-500/10 text-rose-400"
-                  }`}>
-                    {item.status}
-                  </span>
+
+                  {/* Collapsible Details Panel */}
+                  <AnimatePresence initial={false}>
+                    {isExpanded && (
+                      <motion.div
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.2 }}
+                        className="overflow-hidden"
+                      >
+                        <div className="px-6 pb-6 pt-4 border-t border-white/[0.03] bg-black/20 space-y-4">
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div className="bg-slate-900/50 border border-white/5 rounded-2xl p-4">
+                              <span className="text-slate-500 block text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Submitted Date</span>
+                              <span className="text-xs md:text-sm font-black text-white uppercase">{formatNepaliDate(item.date)}</span>
+                            </div>
+
+                            <div className="bg-slate-900/50 border border-white/5 rounded-2xl p-4">
+                              <span className="text-slate-500 block text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Cash Paid</span>
+                              <span className="text-xs md:text-sm font-black text-white">Rs. {item.amount.toLocaleString()}</span>
+                            </div>
+
+                            <div className="bg-slate-900/50 border border-white/5 rounded-2xl p-4">
+                              <span className="text-slate-500 block text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Credits Applied</span>
+                              <span className={`text-xs md:text-sm font-black ${item.creditUsed > 0 ? "text-blue-400" : "text-slate-500"}`}>
+                                Rs. {(item.creditUsed || 0).toLocaleString()}
+                              </span>
+                            </div>
+
+                            <div className="bg-slate-900/50 border border-white/5 rounded-2xl p-4">
+                              <span className="text-slate-500 block text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1">Net Credit Impact</span>
+                              {item.advancedPayment > 0 ? (
+                                <span className="text-xs md:text-sm font-black text-emerald-400">+ Rs. {item.advancedPayment.toLocaleString()}</span>
+                              ) : item.advancedPayment < 0 ? (
+                                <span className="text-xs md:text-sm font-black text-rose-400">- Rs. {Math.abs(item.advancedPayment).toLocaleString()}</span>
+                              ) : (
+                                <span className="text-xs md:text-sm font-bold text-slate-500">Rs. 0</span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Notes/Remarks */}
+                          {item.details && (
+                            <div className="bg-slate-900/30 border border-white/5 p-4 rounded-2xl">
+                              <span className="text-slate-500 block text-[9px] md:text-[10px] font-black uppercase tracking-widest mb-1.5">Transaction remarks</span>
+                              <p className="text-xs md:text-sm text-slate-300 leading-relaxed font-medium">{item.details}</p>
+                            </div>
+                          )}
+
+                          {/* Proof Evidence Preview button */}
+                          {item.proof && (
+                            <div className="flex items-center justify-between p-4 bg-slate-900/50 border border-white/5 rounded-2xl">
+                              <div className="flex items-center gap-3">
+                                <FileText className="w-5 h-5 text-emerald-450" />
+                                <span className="text-xs text-slate-350 font-black uppercase tracking-wider">Verification Evidence Attached</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveProofUrl(item.proof);
+                                }}
+                                className="px-5 py-2.5 bg-emerald-500/10 hover:bg-emerald-500 text-emerald-400 hover:text-white border border-emerald-500/20 hover:border-transparent rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5"
+                              >
+                                <Eye className="w-4 h-4" />
+                                View Evidence
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
-                
-                <div className="flex justify-between text-[10px] pt-1.5 border-t border-white/[0.03]">
-                  <span className="text-slate-500">Submitted Amount</span>
-                  <span className="font-black text-white">Rs. {item.amount.toLocaleString()}</span>
-                </div>
-
-                {item.advancedPayment > 0 && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-slate-500">Advance Credit Generated</span>
-                    <span className="font-bold text-emerald-400">+ Rs. {item.advancedPayment.toLocaleString()}</span>
-                  </div>
-                )}
-                {item.advancedPayment < 0 && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-slate-500">Credit Transferred Out</span>
-                    <span className="font-bold text-rose-400">- Rs. {Math.abs(item.advancedPayment).toLocaleString()}</span>
-                  </div>
-                )}
-
-                {item.creditUsed > 0 && (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-slate-500">Advance Credits Applied</span>
-                    <span className="font-bold text-blue-400">- Rs. {item.creditUsed.toLocaleString()}</span>
-                  </div>
-                )}
-
-                {item.details && (
-                  <p className="text-[9px] text-slate-600 bg-white/[0.01] px-2.5 py-1.5 rounded-lg border border-white/[0.03] mt-1.5 leading-normal">
-                    {item.details}
-                  </p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -437,6 +673,45 @@ export default function MemberDepositTab({
                   >
                     Go Back
                   </button>
+                )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Proof Viewer Modal */}
+      <AnimatePresence>
+        {activeProofUrl && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-3xl max-h-[85vh] bg-slate-900 border border-white/10 rounded-[32px] p-2 overflow-hidden flex flex-col items-center shadow-2xl"
+            >
+              <button 
+                type="button"
+                onClick={() => setActiveProofUrl(null)}
+                className="absolute top-4 right-4 z-20 p-2 bg-black/60 hover:bg-black/80 rounded-xl text-slate-400 hover:text-white transition-all border border-white/10"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+              
+              <div className="relative w-full overflow-auto max-h-[80vh] flex items-center justify-center p-4">
+                {activeProofUrl.startsWith("data:") || activeProofUrl.startsWith("http") ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img 
+                    src={activeProofUrl} 
+                    alt="Transaction Evidence Slip" 
+                    className="max-w-full max-h-[70vh] object-contain rounded-2xl border border-white/5 shadow-2xl"
+                  />
+                ) : (
+                  <div className="p-12 text-center text-slate-500 font-bold uppercase tracking-wider text-xs">
+                    <FileText className="w-16 h-16 text-slate-700 mx-auto mb-4" />
+                    <span>Evidence Text Reference:</span>
+                    <p className="mt-2 text-white font-mono bg-black/30 p-4 rounded-xl border border-white/5">{activeProofUrl}</p>
+                  </div>
                 )}
               </div>
             </motion.div>

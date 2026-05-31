@@ -30,6 +30,7 @@ interface NepaliDatePickerProps {
   side?: "left" | "right" | "bottom" | "top";
   compact?: boolean;
   maxDate?: string; // ISO Date String
+  minDate?: string; // ISO Date String
   startYear?: number;
 }
 
@@ -42,6 +43,7 @@ export default function NepaliDatePicker({
   side = "bottom", 
   compact = false, 
   maxDate,
+  minDate,
   startYear = 2070
 }: NepaliDatePickerProps) {
   const [isOpen, setIsOpen] = useState(false);
@@ -86,26 +88,62 @@ export default function NepaliDatePicker({
     }
   };
 
-  const isFutureDate = (day: number) => {
+  const isDateDisabled = (day: number) => {
     const adDate = bsToAd(viewDate.year, viewDate.month, day);
     
     if (maxDate) {
       const maxLimit = new Date(maxDate);
       maxLimit.setHours(23, 59, 59, 999);
-      return adDate > maxLimit;
+      if (adDate > maxLimit) return true;
+    }
+
+    if (minDate) {
+      const minLimit = new Date(minDate);
+      minLimit.setHours(0, 0, 0, 0);
+      if (adDate < minLimit) return true;
     }
 
     if (disableFuture) {
       const today = new Date();
       today.setHours(23, 59, 59, 999); // Allow today
-      return adDate > today;
+      if (adDate > today) return true;
     }
 
     return false;
   };
 
+  const prevMonthDisabled = (() => {
+    if (!minDate) return false;
+    try {
+      const minBs = adToBs(new Date(minDate));
+      if (viewDate.year < minBs.year) return true;
+      if (viewDate.year === minBs.year && viewDate.month <= minBs.month) return true;
+      return false;
+    } catch {
+      return false;
+    }
+  })();
+
+  const nextMonthDisabled = (() => {
+    if (!maxDate && disableFuture) {
+      const todayBs = getCurrentNepaliDate();
+      if (viewDate.year > todayBs.year) return true;
+      if (viewDate.year === todayBs.year && viewDate.month >= todayBs.month) return true;
+      return false;
+    }
+    if (maxDate) {
+      try {
+        const maxBs = adToBs(new Date(maxDate));
+        if (viewDate.year > maxBs.year) return true;
+        if (viewDate.year === maxBs.year && viewDate.month >= maxBs.month) return true;
+        return false;
+      } catch {}
+    }
+    return false;
+  })();
+
   const handleSelectDay = (day: number) => {
-    if (isFutureDate(day)) return;
+    if (isDateDisabled(day)) return;
     const adDate = bsToAd(viewDate.year, viewDate.month, day);
     onChange(adDate.toISOString());
     setIsOpen(false);
@@ -176,8 +214,9 @@ export default function NepaliDatePicker({
             <div className={`${compact ? 'p-3' : 'p-6'} flex items-center justify-between border-b border-white/5 bg-white/[0.02]`}>
               <button 
                 type="button"
+                disabled={prevMonthDisabled}
                 onClick={handlePrevMonth} 
-                className="p-2 hover:bg-white/5 rounded-xl text-slate-500 hover:text-white transition-all active:scale-90"
+                className="p-2 hover:bg-white/5 disabled:opacity-20 disabled:hover:bg-transparent disabled:cursor-not-allowed rounded-xl text-slate-500 hover:text-white transition-all active:scale-90"
               >
                 <ChevronLeft className={`${compact ? 'w-4 h-4' : 'w-6 h-6'}`} />
               </button>
@@ -198,8 +237,9 @@ export default function NepaliDatePicker({
               </div>
               <button 
                 type="button"
+                disabled={nextMonthDisabled}
                 onClick={handleNextMonth} 
-                className="p-2 hover:bg-white/5 rounded-xl text-slate-500 hover:text-white transition-all active:scale-90"
+                className="p-2 hover:bg-white/5 disabled:opacity-20 disabled:hover:bg-transparent disabled:cursor-not-allowed rounded-xl text-slate-500 hover:text-white transition-all active:scale-90"
               >
                 <ChevronRight className={`${compact ? 'w-4 h-4' : 'w-6 h-6'}`} />
               </button>
@@ -219,7 +259,7 @@ export default function NepaliDatePicker({
               {days.map((day, idx) => {
                 const isSelected = day === selectedDate.day && viewDate.month === selectedDate.month && viewDate.year === selectedDate.year;
                 const isToday = day === getCurrentNepaliDate().day && viewDate.month === getCurrentNepaliDate().month && viewDate.year === getCurrentNepaliDate().year;
-                const disabled = day ? isFutureDate(day) : false;
+                const disabled = day ? isDateDisabled(day) : false;
                 
                 return (
                   <div key={idx} className="aspect-square flex items-center justify-center">

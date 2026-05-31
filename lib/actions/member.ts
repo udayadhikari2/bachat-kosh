@@ -51,6 +51,8 @@ export async function getMemberActivity(userId: string) {
         details: dep.remarks,
         advancedPayment: dep.advancedPayment,
         creditUsed: dep.creditUsed,
+        proof: dep.proof,
+        depositType: dep.depositType,
       });
     });
 

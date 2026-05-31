@@ -8,6 +8,7 @@ import {
   HandCoins,
   Clock,
   AlertCircle,
+  AlertTriangle,
   ArrowRight,
   PiggyBank,
   Send,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { calculateLoanStats } from "@/lib/utils/loan-calculations";
+import { getNepaliMonthRange, getNextNepaliMonth } from "@/lib/utils/nepali-date";
 
 interface MemberHomeTabProps {
   memberData: any;
@@ -39,7 +41,11 @@ export default function MemberHomeTab({
 }: MemberHomeTabProps) {
   const user = memberData?.user || {};
   const stats = memberData?.stats || { totalDeposits: 0, activeLoans: 0, totalLoanPaid: 0, currentAdvanceBalance: 0 };
-  const timeline = (memberData?.timeline || []).slice(0, 5); // display 5 most recent activities
+  const timeline = (memberData?.timeline || []);
+  const depositTimeline = timeline.filter((event: any) => event.type === "DEPOSIT").slice(0, 5);
+  const loanTimeline = timeline.filter((event: any) => ["LOAN_REQUEST", "LOAN_PAYMENT", "LOAN_RENEWAL"].includes(event.type)).slice(0, 5);
+
+  const [activeActivityTab, setActiveActivityTab] = useState<"deposits" | "loans">("deposits");
 
   // Active Loan Details Selection
   const activeLoans = useMemo(() => {
@@ -85,10 +91,11 @@ export default function MemberHomeTab({
   const percentPaid = principalAmount > 0 ? Math.min(100, Math.max(0, Math.round((principalPaid / principalAmount) * 100))) : 0;
 
   const accruedInterest = loanStats ? (loanStats.totalInterest || 0) : 0;
-  const serviceRenewalCharge = activeLoan ? ((activeLoan.serviceChargeAmount || 0) + (activeLoan.renewalAmount || 0)) : 0;
-  const unpaidSC = loanStats ? (loanStats.unpaidSC || 0) : 0;
-  const unpaidRenewal = loanStats ? (loanStats.unpaidRenewal || 0) : 0;
-  const unpaidSC_RC = unpaidSC + unpaidRenewal;
+  const runningInterestDays = loanStats ? (loanStats.totalDays || 0) : elapsedDays;
+  const principalOutstanding = loanStats ? (loanStats.principalOutstanding || 0) : principalAmount;
+  const outstandingInterest = loanStats ? ((loanStats.unpaidBaseInterest || 0) + (loanStats.unpaidPenaltyInterest || 0)) : 0;
+  const unpaidSC = loanStats ? (loanStats.unpaidSC || 0) : (activeLoan?.serviceChargeAmount || 0);
+  const unpaidRenewal = loanStats ? (loanStats.unpaidRenewal || 0) : (activeLoan?.renewalAmount || 0);
 
   const [timeLeft, setTimeLeft] = useState({ days: 0, hours: 0, minutes: 0, seconds: 0, isOverdue: false });
 
@@ -117,6 +124,30 @@ export default function MemberHomeTab({
     return () => clearInterval(interval);
   }, [activeLoan?._id, activeLoan?.dueDate]);
 
+  // Unpaid months calculations
+  const unpaidMonths = useMemo(() => {
+    if (!currentNepaliMonth || !orgConfig) return [];
+    const initialMonth = orgConfig.financials?.initialOpeningMonth;
+    const initialYear = orgConfig.financials?.initialOpeningYear;
+    if (!initialMonth || !initialYear) return [];
+    
+    const startMonthStr = getNextNepaliMonth(`${initialMonth} ${initialYear}`);
+    const monthsRange = getNepaliMonthRange(startMonthStr, currentNepaliMonth);
+    
+    const timeline = memberData?.timeline || [];
+    return monthsRange.filter(mStr => {
+      const hasDeposit = timeline.some(
+        (item: any) => 
+          item.type === "DEPOSIT" && 
+          item.month === mStr && 
+          (item.status === "APPROVED" || item.status === "PENDING")
+      );
+      return !hasDeposit;
+    });
+  }, [currentNepaliMonth, orgConfig, memberData?.timeline]);
+
+  const previousUnpaidMonths = unpaidMonths.filter(m => m !== currentNepaliMonth);
+
   // Look for current month deposit status in timeline
   const currentMonthDeposit = (memberData?.timeline || []).find(
     (item: any) => item.type === "DEPOSIT" && item.month === currentNepaliMonth
@@ -128,15 +159,30 @@ export default function MemberHomeTab({
   const activeLoansList = (memberData?.timeline || []).filter(
     (item: any) => item.type === "LOAN_REQUEST" && item.status === "ACTIVE"
   );
-  // Fetch actual active loan details from Mongoose if we have it
-  // For the dashboard, we'll summarize based on getMemberActivity or fallback
   const hasActiveLoanOverride = activeLoans.length > 0;
-
-  // Quick calculations for display
   const totalAssets = stats.totalDeposits + stats.currentAdvanceBalance;
 
   return (
     <div className="space-y-4">
+      {/* Unpaid Month Reminder Banner */}
+      {previousUnpaidMonths.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/20 rounded-[24px] p-5 flex items-start gap-4 shadow-lg shadow-amber-500/5 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-amber-500/5 blur-2xl rounded-full" />
+          <div className="w-10 h-10 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center shrink-0 mt-0.5">
+            <AlertTriangle className="w-5 h-5 animate-pulse" />
+          </div>
+          <div className="space-y-1">
+            <h3 className="text-xs font-black text-white uppercase tracking-wider">Unpaid Deposits Reminder</h3>
+            <p className="text-[10px] text-slate-400 leading-relaxed">
+              You have unpaid monthly deposits for the following previous month(s):{" "}
+              <span className="font-bold text-amber-400">
+                {previousUnpaidMonths.join(", ")}
+              </span>.
+              Please register deposit requests for these periods first.
+            </p>
+          </div>
+        </div>
+      )}
       {/* Welcome & Info Segment */}
       <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[10px] p-3 md:backdrop-blur-md relative overflow-hidden">
         <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-3xl rounded-[8px]" />
@@ -376,7 +422,10 @@ export default function MemberHomeTab({
       {/* Active Loan Reminder Card */}
       {
         hasActiveLoan && (
-          <div className="bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-indigo-500/30 p-6 rounded-[36px] shadow-2xl relative overflow-hidden group shadow-indigo-950/20">
+          <div 
+            onClick={() => onOpenLoanRepay(activeLoan?._id?.toString())}
+            className="bg-gradient-to-br from-slate-900 via-slate-950 to-slate-900 border border-indigo-500/30 p-6 rounded-[36px] shadow-2xl relative overflow-hidden group shadow-indigo-950/20 cursor-pointer hover:border-indigo-500/60 active:scale-[0.99] transition-all duration-300"
+          >
             {/* Subtle Glowing Background Accents */}
             <div className="absolute top-0 right-0 w-36 h-36 bg-indigo-500/10 blur-[80px] rounded-full group-hover:bg-indigo-500/20 transition-all duration-700" />
             <div className="absolute bottom-0 left-0 w-36 h-36 bg-emerald-500/5 blur-[80px] rounded-full group-hover:bg-emerald-500/10 transition-all duration-700" />
@@ -388,6 +437,7 @@ export default function MemberHomeTab({
                 <select
                   value={selectedLoanId || ""}
                   onChange={(e) => setSelectedLoanId(e.target.value)}
+                  onClick={(e) => e.stopPropagation()}
                   className="bg-slate-950 text-white border border-slate-800 text-[8px] rounded-xl px-2 py-1 focus:outline-none focus:border-indigo-500 font-black uppercase tracking-wider cursor-pointer"
                 >
                   {activeLoans.map((l: any, index: number) => (
@@ -426,46 +476,89 @@ export default function MemberHomeTab({
                   <span className="text-xl font-black text-white mt-1 block tracking-tight">
                     Rs. {balanceAmount.toLocaleString()}
                   </span>
-                  <span className="text-[8.5px] text-slate-400 font-bold mt-1 block leading-none">Principal: Rs. {principalAmount.toLocaleString()}</span>
+                  <span className="text-[8.5px] text-slate-400 font-bold mt-1 block leading-none">Original Principal: Rs. {principalAmount.toLocaleString()}</span>
                 </div>
                 <div className="text-right flex flex-col justify-between">
                   <div>
                     <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">Interest Days</span>
                     <span className="text-xs font-black text-slate-200 mt-1 inline-block bg-slate-950 border border-slate-900 px-2.5 py-0.5 rounded-full">
-                      {totalDays} Days Term
+                      {runningInterestDays} Days Running
                     </span>
                   </div>
                   <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-2">
-                    Elapsed: <span className="text-indigo-400">{elapsedDays} Days</span>
+                    Term Duration: <span className="text-indigo-400">{totalDays} Days</span>
                   </div>
                 </div>
               </div>
 
-              {/* Accrued Interest & SC/RC Details */}
-              <div className="grid grid-cols-2 gap-4 bg-white/[0.01] border border-white/5 rounded-2xl p-4">
-                <div>
-                  <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">Accrued Interest</span>
-                  <span className="text-base font-black text-white mt-1 block tracking-tight">
-                    Rs. {accruedInterest.toLocaleString()}
-                  </span>
-                  {loanStats && ((loanStats.unpaidBaseInterest || 0) > 0 || (loanStats.unpaidPenaltyInterest || 0) > 0) && (
-                    <span className="text-[7.5px] text-slate-500 block mt-1 leading-none">
-                      Unpaid: Rs. {((loanStats.unpaidBaseInterest || 0) + (loanStats.unpaidPenaltyInterest || 0)).toLocaleString()}
-                    </span>
-                  )}
-                </div>
-                <div className="text-right flex flex-col justify-start">
-                  <div>
-                    <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">SC / RC Charge</span>
-                    <span className="text-base font-black text-white mt-1 block tracking-tight">
-                      Rs. {serviceRenewalCharge.toLocaleString()}
-                    </span>
+              {/* Row-wise Financial Details */}
+              <div className="space-y-2.5 bg-slate-950/50 border border-white/5 rounded-2xl p-4 shadow-inner">
+                {/* 1. Principal O/S Row */}
+                <div className="flex items-center justify-between py-2.5 border-b border-white/[0.03] hover:bg-white/[0.01] px-1 rounded-lg transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                      <Wallet className="w-4 h-4 shrink-0" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-200">Principal Outstanding</span>
+                      <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Remaining principal debt</span>
+                    </div>
                   </div>
-                  {unpaidSC_RC > 0 && (
-                    <span className="text-[7.5px] text-rose-400 font-bold mt-1 block leading-none">
-                      Unpaid: Rs. {unpaidSC_RC.toLocaleString()}
-                    </span>
-                  )}
+                  <span className="text-sm font-black text-white">
+                    Rs. {principalOutstanding.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* 2. Interest O/S Row */}
+                <div className="flex items-center justify-between py-2.5 border-b border-white/[0.03] hover:bg-white/[0.01] px-1 rounded-lg transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                      <TrendingUp className="w-4 h-4 shrink-0" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-200">Interest Outstanding</span>
+                      <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">
+                        {loanStats && ((loanStats.unpaidBaseInterest || 0) > 0 || (loanStats.unpaidPenaltyInterest || 0) > 0) 
+                          ? `Base: Rs. ${(loanStats.unpaidBaseInterest || 0).toLocaleString()} • Penalty: Rs. ${(loanStats.unpaidPenaltyInterest || 0).toLocaleString()}`
+                          : 'Accumulated interest'}
+                      </span>
+                    </div>
+                  </div>
+                  <span className="text-sm font-black text-white">
+                    Rs. {outstandingInterest.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* 3. Service Charge (SC) Row */}
+                <div className="flex items-center justify-between py-2.5 border-b border-white/[0.03] hover:bg-white/[0.01] px-1 rounded-lg transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+                      <HandCoins className="w-4 h-4 shrink-0" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-200">Service Charge (SC)</span>
+                      <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Unpaid administration & service fee</span>
+                    </div>
+                  </div>
+                  <span className="text-sm font-black text-white">
+                    Rs. {unpaidSC.toLocaleString()}
+                  </span>
+                </div>
+
+                {/* 4. Renewal Charge (RC) Row */}
+                <div className="flex items-center justify-between py-2.5 hover:bg-white/[0.01] px-1 rounded-lg transition-colors">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400">
+                      <Clock className="w-4 h-4 shrink-0" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-200">Renewal Charge (RC)</span>
+                      <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Unpaid renewal & extension fee</span>
+                    </div>
+                  </div>
+                  <span className="text-sm font-black text-white">
+                    Rs. {unpaidRenewal.toLocaleString()}
+                  </span>
                 </div>
               </div>
 
@@ -535,10 +628,13 @@ export default function MemberHomeTab({
 
               {/* View Details Action Button */}
               <button
-                onClick={() => onTabChange("loans")}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOpenLoanRepay(activeLoan?._id?.toString());
+                }}
                 className="w-full py-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl text-[9px] font-black uppercase tracking-[0.2em] shadow-lg shadow-indigo-600/20 hover:shadow-indigo-600/40 transition-all duration-300 flex items-center justify-center gap-2 group active:scale-[0.98]"
               >
-                Details & Repayment Tab
+                View Full Details
                 <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
               </button>
             </div>
@@ -546,57 +642,129 @@ export default function MemberHomeTab({
         )
       }
 
-      {/* Recent Activity Timeline */}
+      {/* Recent Activity Timeline Categorized */}
       <div className="bg-slate-900/90 md:bg-slate-900/40 border border-slate-800/80 rounded-[32px] p-6 md:backdrop-blur-md">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xs font-black uppercase text-white tracking-widest">Recent Activity</h3>
+        {/* Header segments */}
+        <div className="flex border-b border-slate-800 px-1 mb-6">
           <button
-            onClick={() => onTabChange("deposit")}
-            className="text-[9px] font-black text-emerald-400 hover:text-white uppercase tracking-widest flex items-center gap-1.5 transition-colors"
+            onClick={() => setActiveActivityTab("deposits")}
+            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all ${
+              activeActivityTab === "deposits" 
+                ? "border-emerald-500 text-white" 
+                : "border-transparent text-slate-500 hover:text-slate-300"
+            }`}
           >
-            History <ArrowRight className="w-3 h-3" />
+            Recent Deposits
+          </button>
+          <button
+            onClick={() => setActiveActivityTab("loans")}
+            className={`flex-1 py-3 text-xs font-black uppercase tracking-wider text-center border-b-2 transition-all ${
+              activeActivityTab === "loans" 
+                ? "border-emerald-500 text-white" 
+                : "border-transparent text-slate-500 hover:text-slate-300"
+            }`}
+          >
+            Recent Loans
           </button>
         </div>
 
-        {timeline.length === 0 ? (
-          <div className="py-12 border-2 border-dashed border-slate-800 rounded-2xl text-center text-[10px] font-black text-slate-600 uppercase tracking-widest">
-            No activity logged in registry
+        {/* Tab Content */}
+        {activeActivityTab === "deposits" ? (
+          <div>
+            <div className="flex justify-between items-center mb-4 px-1">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Showing Last 5 Deposit Events</span>
+              <button
+                onClick={() => onTabChange("deposit")}
+                className="text-[9px] font-black text-emerald-400 hover:text-white uppercase tracking-widest flex items-center gap-1.5 transition-colors"
+              >
+                View All History <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+
+            {depositTimeline.length === 0 ? (
+              <div className="py-12 border-2 border-dashed border-slate-800 rounded-2xl text-center text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                No deposit activity logged
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {depositTimeline.map((event: any, i: number) => (
+                  <div key={event.id || i} className="flex items-start gap-4">
+                    <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${
+                      event.status === "APPROVED"
+                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
+                        : event.status === "PENDING"
+                          ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                          : "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                    }`}>
+                      <PiggyBank className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="text-xs font-bold text-white truncate leading-tight">{event.title}</p>
+                        {event.amount > 0 && (
+                          <span className="text-xs font-black text-white shrink-0">
+                            Rs. {event.amount.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                        {new Date(event.date).toLocaleDateString()} {event.month ? `• ${event.month}` : ""}
+                      </p>
+                      {event.details && (
+                        <p className="text-[9px] text-slate-600 mt-1 italic line-clamp-1">{event.details}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         ) : (
-          <div className="space-y-4">
-            {timeline.map((event: any, i: number) => (
-              <div key={event.id || i} className="flex items-start gap-4">
-                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border ${event.type === "DEPOSIT"
-                  ? event.status === "APPROVED"
-                    ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-400"
-                    : event.status === "PENDING"
-                      ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
-                      : "bg-rose-500/10 border-rose-500/20 text-rose-400"
-                  : "bg-blue-500/10 border-blue-500/20 text-blue-400"
-                  }`}>
-                  {event.type === "DEPOSIT" ? <PiggyBank className="w-4 h-4" /> : <HandCoins className="w-4 h-4" />}
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex justify-between items-start gap-2">
-                    <p className="text-xs font-bold text-white truncate leading-tight">{event.title}</p>
-                    {event.amount > 0 && (
-                      <span className="text-xs font-black text-white shrink-0">
-                        Rs. {event.amount.toLocaleString()}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
-                    {new Date(event.date).toLocaleDateString()} {event.month ? `• ${event.month}` : ""}
-                  </p>
-                  {event.details && (
-                    <p className="text-[9px] text-slate-600 mt-1 italic line-clamp-1">{event.details}</p>
-                  )}
-                </div>
+          <div>
+            <div className="flex justify-between items-center mb-4 px-1">
+              <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Showing Last 5 Loan Events</span>
+              <button
+                onClick={() => onTabChange("loans")}
+                className="text-[9px] font-black text-emerald-400 hover:text-white uppercase tracking-widest flex items-center gap-1.5 transition-colors"
+              >
+                View All History <ArrowRight className="w-3 h-3" />
+              </button>
+            </div>
+
+            {loanTimeline.length === 0 ? (
+              <div className="py-12 border-2 border-dashed border-slate-800 rounded-2xl text-center text-[10px] font-black text-slate-600 uppercase tracking-widest">
+                No loan activity logged
               </div>
-            ))}
+            ) : (
+              <div className="space-y-4">
+                {loanTimeline.map((event: any, i: number) => (
+                  <div key={event.id || i} className="flex items-start gap-4">
+                    <div className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0 border bg-blue-500/10 border-blue-500/20 text-blue-400">
+                      <HandCoins className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="text-xs font-bold text-white truncate leading-tight">{event.title}</p>
+                        {event.amount > 0 && (
+                          <span className="text-xs font-black text-white shrink-0">
+                            Rs. {event.amount.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">
+                        {new Date(event.date).toLocaleDateString()} {event.month ? `• ${event.month}` : ""}
+                      </p>
+                      {event.details && (
+                        <p className="text-[9px] text-slate-600 mt-1 italic line-clamp-1">{event.details}</p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>
-    </div >
+    </div>
   );
 }

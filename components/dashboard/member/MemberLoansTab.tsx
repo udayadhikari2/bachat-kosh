@@ -17,11 +17,13 @@ import {
   Plus, 
   UploadCloud,
   FileText,
-  ChevronDown
+  ChevronDown,
+  Wallet
 } from "lucide-react";
 import { createLoanRequest, submitLoanRepaymentRequest } from "@/lib/actions/loan";
 import toast from "react-hot-toast";
 import { calculateLoanStats } from "@/lib/utils/loan-calculations";
+import { adToBs } from "@/lib/utils/nepali-date";
 
 interface MemberLoansTabProps {
   memberData: any;
@@ -35,6 +37,11 @@ export default function MemberLoansTab({
   onRefresh
 }: MemberLoansTabProps) {
   const user = memberData?.user || {};
+  const formatNepaliDate = (dateVal: string | Date) => {
+    const bs = adToBs(dateVal);
+    if (bs.year === 0) return "N/A";
+    return `${bs.monthName} ${bs.day}, ${bs.year}`;
+  };
   const stats = memberData?.stats || { totalDeposits: 0, activeLoans: 0, totalLoanPaid: 0, currentAdvanceBalance: 0 };
   const activities = memberData?.timeline || [];
 
@@ -51,6 +58,9 @@ export default function MemberLoansTab({
   const hasActiveLoan = stats.activeLoans > 0;
 
   // Active Loan Details Drawer
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [detailsLoanId, setDetailsLoanId] = useState<string | null>(null);
+
   const [showRepayModal, setShowRepayModal] = useState(false);
   const [repayLoanId, setRepayLoanId] = useState<string | null>(null);
   const [repayAmount, setRepayAmount] = useState("");
@@ -60,13 +70,13 @@ export default function MemberLoansTab({
 
   useEffect(() => {
     if (queryLoanId) {
-      // Find if this loan exists and is active/overdue
-      const activeRawLoan = (memberData?.loans || []).find(
-        (l: any) => l._id.toString() === queryLoanId && ["ACTIVE", "OVERDUE"].includes(l.status)
+      // Find if this loan exists
+      const rawLoan = (memberData?.loans || []).find(
+        (l: any) => l._id.toString() === queryLoanId
       );
-      if (activeRawLoan) {
-        setRepayLoanId(queryLoanId);
-        setShowRepayModal(true);
+      if (rawLoan) {
+        setDetailsLoanId(queryLoanId);
+        setShowDetailsModal(true);
       }
     }
   }, [queryLoanId, memberData?.loans]);
@@ -79,6 +89,23 @@ export default function MemberLoansTab({
       params.delete("loanId");
       router.replace(`/dashboard?${params.toString()}`);
     }
+  };
+
+  const handleCloseDetailsModal = () => {
+    setShowDetailsModal(false);
+    setDetailsLoanId(null);
+    if (queryLoanId) {
+      const params = new URLSearchParams(window.location.search);
+      params.delete("loanId");
+      router.replace(`/dashboard?${params.toString()}`);
+    }
+  };
+
+  const handleOpenRepayFromDetails = (loanId: string) => {
+    setShowDetailsModal(false);
+    setDetailsLoanId(null);
+    setRepayLoanId(loanId);
+    setShowRepayModal(true);
   };
 
   // Apply Loan Modal
@@ -308,15 +335,26 @@ export default function MemberLoansTab({
                         </div>
                       </div>
  
-                      <button
-                        onClick={() => {
-                          setRepayLoanId(loan.id);
-                          setShowRepayModal(true);
-                        }}
-                        className="w-full py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
-                      >
-                        Submit Repayment Request
-                      </button>
+                      <div className="flex gap-3 pt-1">
+                        <button
+                          onClick={() => {
+                            setDetailsLoanId(loan.id);
+                            setShowDetailsModal(true);
+                          }}
+                          className="flex-1 py-4 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border border-white/5"
+                        >
+                          View Details
+                        </button>
+                        <button
+                          onClick={() => {
+                            setRepayLoanId(loan.id);
+                            setShowRepayModal(true);
+                          }}
+                          className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                        >
+                          Submit Repayment
+                        </button>
+                      </div>
                     </div>
                   </div>
 
@@ -334,7 +372,7 @@ export default function MemberLoansTab({
                           <div key={pmt.id} className="p-3 bg-black/20 border border-white/5 rounded-xl flex items-center justify-between">
                             <div>
                               <span className="text-xs font-bold text-white block">Rs. {pmt.amount.toLocaleString()}</span>
-                              <span className="text-[9px] text-slate-500 mt-0.5 block">{new Date(pmt.date).toLocaleDateString()}</span>
+                              <span className="text-[9px] text-slate-500 mt-0.5 block">{formatNepaliDate(pmt.date)}</span>
                             </div>
                             <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${
                               pmt.status === "APPROVED"
@@ -375,7 +413,7 @@ export default function MemberLoansTab({
                       <div>
                         <span className="text-xs font-black text-white">Rs. {l.amount.toLocaleString()}</span>
                         <p className="text-[9px] text-slate-500 mt-1 uppercase tracking-wider font-bold">
-                          Submitted: {new Date(l.date).toLocaleDateString()}
+                          Submitted: {formatNepaliDate(l.date)}
                         </p>
                       </div>
                       <span className="text-[8px] font-black uppercase tracking-widest px-2 py-0.5 bg-amber-500/15 text-amber-400 rounded-md">
@@ -408,7 +446,7 @@ export default function MemberLoansTab({
                     <div className="flex justify-between items-start">
                       <div>
                         <span className="text-xs font-black text-white">Rs. {item.amount.toLocaleString()}</span>
-                        <span className="text-[9px] text-slate-500 font-bold block mt-0.5">{new Date(item.date).toLocaleDateString()}</span>
+                        <span className="text-[9px] text-slate-500 font-bold block mt-0.5">{formatNepaliDate(item.date)}</span>
                       </div>
                       <span className={`text-[8px] font-black uppercase tracking-widest px-2 py-0.5 rounded-md ${
                         item.status === "COMPLETED"
@@ -507,6 +545,264 @@ export default function MemberLoansTab({
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+
+      {/* Loan Details Modal Drawer */}
+      <AnimatePresence>
+        {showDetailsModal && detailsLoanId && (() => {
+          const rawLoan = (memberData?.loans || []).find((l: any) => l._id.toString() === detailsLoanId);
+          if (!rawLoan) return null;
+
+          const loanStats = calculateLoanStats(rawLoan);
+
+          const activatedDate = rawLoan.activatedAt ? new Date(rawLoan.activatedAt) : new Date(rawLoan.createdAt);
+          const dueDate = rawLoan.dueDate ? new Date(rawLoan.dueDate) : new Date();
+          const elapsedDays = Math.max(0, Math.ceil((new Date().getTime() - activatedDate.getTime()) / (1000 * 60 * 60 * 24)));
+          const totalDays = loanStats?.totalDays || Math.max(1, Math.ceil((dueDate.getTime() - activatedDate.getTime()) / (1000 * 60 * 60 * 24)));
+          
+          const runningInterestDays = loanStats ? (loanStats.totalDays || 0) : elapsedDays;
+          const principalOutstanding = loanStats ? (loanStats.principalOutstanding || 0) : rawLoan.principalAmount;
+          const outstandingInterest = loanStats ? ((loanStats.unpaidBaseInterest || 0) + (loanStats.unpaidPenaltyInterest || 0)) : 0;
+          const unpaidSC = loanStats ? (loanStats.unpaidSC || 0) : (rawLoan.serviceChargeAmount || 0);
+          const unpaidRenewal = loanStats ? (loanStats.unpaidRenewal || 0) : (rawLoan.renewalAmount || 0);
+          const balanceAmount = loanStats ? (loanStats.outstandingAmount || 0) : (rawLoan.balanceAmount || 0);
+
+          const loanRepayments = repayments.filter((pmt: any) => pmt.loanId === detailsLoanId || (rawLoan.payments || []).some((rp: any) => rp._id?.toString() === pmt.id));
+
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0, y: 20 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.9, opacity: 0, y: 20 }}
+                className="w-full max-w-2xl bg-slate-950 border border-white/10 rounded-[36px] shadow-2xl overflow-hidden relative flex flex-col max-h-[90vh]"
+              >
+                {/* Modal Header */}
+                <div className="px-6 py-4 border-b border-slate-900 flex justify-between items-center bg-slate-900/10 shrink-0">
+                  <div className="flex items-center gap-2">
+                    <HandCoins className="w-5 h-5 text-indigo-400" />
+                    <div>
+                      <h3 className="text-sm font-black text-white uppercase tracking-wider">Loan Details</h3>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">ID: {detailsLoanId}</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleCloseDetailsModal}
+                    className="p-1.5 bg-white/5 hover:bg-white/10 border border-white/5 rounded-lg text-slate-400 hover:text-white"
+                  >
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Modal Content - Scrollable */}
+                <div className="p-6 overflow-y-auto space-y-6 flex-1 custom-scrollbar">
+                  {/* Status & Type Info Card */}
+                  <div className="bg-gradient-to-br from-slate-900 to-slate-950 border border-slate-800 rounded-3xl p-5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-indigo-500/5 blur-2xl rounded-full" />
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Original Loan Principal</span>
+                        <h2 className="text-2xl font-black text-white mt-1">Rs. {rawLoan.principalAmount.toLocaleString()}</h2>
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className={`text-[8.5px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full border ${
+                            rawLoan.status === "ACTIVE"
+                              ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                              : rawLoan.status === "OVERDUE"
+                                ? "bg-rose-500/10 text-rose-400 border-rose-500/20"
+                                : "bg-slate-800 text-slate-400 border-slate-700"
+                          }`}>
+                            {rawLoan.status}
+                          </span>
+                          <span className="text-[8.5px] text-slate-400 bg-white/5 border border-white/10 px-2.5 py-0.5 rounded-full font-black uppercase tracking-wider">
+                            {rawLoan.type || "Standard"} Loan
+                          </span>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[8px] font-black text-slate-500 uppercase tracking-widest block">Remaining Balance</span>
+                        <h2 className="text-xl font-black text-emerald-400 mt-1">Rs. {balanceAmount.toLocaleString()}</h2>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Loan Parameters Grid */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="bg-white/[0.01] border border-white/5 p-3 rounded-2xl">
+                      <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider block">Interest Rate</span>
+                      <span className="text-white font-black text-xs block mt-1">{rawLoan.interestRate || 12}% p.a.</span>
+                    </div>
+                    <div className="bg-white/[0.01] border border-white/5 p-3 rounded-2xl">
+                      <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider block">Penalty Rate</span>
+                      <span className="text-rose-400 font-black text-xs block mt-1">{rawLoan.penaltyRate || 20}% overdue</span>
+                    </div>
+                    <div className="bg-white/[0.01] border border-white/5 p-3 rounded-2xl">
+                      <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider block">Activated At</span>
+                      <span className="text-white font-black text-xs block mt-1">
+                        {rawLoan.activatedAt ? formatNepaliDate(rawLoan.activatedAt) : "Pending"}
+                      </span>
+                    </div>
+                    <div className="bg-white/[0.01] border border-white/5 p-3 rounded-2xl">
+                      <span className="text-[8px] font-black uppercase text-slate-500 tracking-wider block">Due Date</span>
+                      <span className="text-white font-black text-xs block mt-1">
+                        {rawLoan.dueDate ? formatNepaliDate(rawLoan.dueDate) : "Pending"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Interest Days and Term Info */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-white/[0.01] border border-white/5 rounded-3xl p-4">
+                    <div>
+                      <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">Interest Running Period</span>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-base font-black text-white">{runningInterestDays} Days</span>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase">Running</span>
+                      </div>
+                      <span className="text-[8px] text-slate-500 mt-1 block">Interest calculation days since activation/renewal.</span>
+                    </div>
+                    <div>
+                      <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">Contractual Loan Term</span>
+                      <div className="flex items-baseline gap-2 mt-1">
+                        <span className="text-base font-black text-white">{totalDays} Days</span>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase">Term</span>
+                      </div>
+                      <span className="text-[8px] text-slate-500 mt-1 block">Total contractual term length of current cycle.</span>
+                    </div>
+                  </div>
+
+                  {/* Financial Breakdown (Separated & Styled) */}
+                  <div className="bg-slate-950/60 border border-white/5 rounded-3xl p-5 space-y-4 shadow-inner">
+                    <h4 className="text-[10px] font-black text-white uppercase tracking-widest border-b border-white/5 pb-2">Financial Outstanding Status</h4>
+                    
+                    <div className="space-y-2.5 bg-black/40 border border-white/5 rounded-2xl p-4 shadow-inner">
+                      {/* 1. Principal O/S Row */}
+                      <div className="flex items-center justify-between py-2.5 border-b border-white/[0.03] px-1 hover:bg-white/[0.01] rounded-lg transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-emerald-400">
+                            <Wallet className="w-4 h-4 shrink-0" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">Principal Outstanding</span>
+                            <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Remaining principal debt</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black text-white font-mono">
+                          Rs. {principalOutstanding.toLocaleString()}
+                        </span>
+                      </div>
+
+                      {/* 2. Interest O/S Row */}
+                      <div className="flex items-center justify-between py-2.5 border-b border-white/[0.03] px-1 hover:bg-white/[0.01] rounded-lg transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-indigo-400">
+                            <TrendingUp className="w-4 h-4 shrink-0" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">Interest Outstanding</span>
+                            <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Accumulated interest due</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black text-white font-mono">
+                          Rs. {outstandingInterest.toLocaleString()}
+                        </span>
+                      </div>
+
+                      {/* 3. Service Charge Row */}
+                      <div className="flex items-center justify-between py-2.5 border-b border-white/[0.03] px-1 hover:bg-white/[0.01] rounded-lg transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-amber-500/10 border border-amber-500/20 rounded-xl text-amber-400">
+                            <HandCoins className="w-4 h-4 shrink-0" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">Service Charge (SC)</span>
+                            <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Unpaid administration & service fee</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black text-white font-mono">
+                          Rs. {unpaidSC.toLocaleString()}
+                        </span>
+                      </div>
+
+                      {/* 4. Renewal Charge Row */}
+                      <div className="flex items-center justify-between py-2.5 px-1 hover:bg-white/[0.01] rounded-lg transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-cyan-500/10 border border-cyan-500/20 rounded-xl text-cyan-400">
+                            <Clock className="w-4 h-4 shrink-0" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">Renewal Charge (RC)</span>
+                            <span className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">Unpaid renewal & extension fee</span>
+                          </div>
+                        </div>
+                        <span className="text-sm font-black text-white font-mono">
+                          Rs. {unpaidRenewal.toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+
+                    {loanStats && ((loanStats.unpaidBaseInterest || 0) > 0 || (loanStats.unpaidPenaltyInterest || 0) > 0) && (
+                      <div className="text-[8.5px] text-slate-500 bg-white/[0.02] border border-white/5 rounded-xl p-3 leading-relaxed mt-2">
+                        <span className="font-black text-slate-400 block mb-1">INTEREST ACCRUAL DETAILS:</span>
+                        Base Interest: Rs. {(loanStats.unpaidBaseInterest || 0).toLocaleString()} (for {loanStats.baseDays} days)<br />
+                        Penalty Interest: Rs. {(loanStats.unpaidPenaltyInterest || 0).toLocaleString()} (for {loanStats.exceedDays} days overdue)
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Payment History for this Loan */}
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-black text-white uppercase tracking-widest">Loan Payment Ledger</h4>
+                    {loanRepayments.length === 0 ? (
+                      <div className="py-8 text-center border border-dashed border-slate-800 rounded-2xl text-[9px] font-black text-slate-600 uppercase tracking-widest">
+                        No payments found for this loan
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-[180px] overflow-y-auto custom-scrollbar">
+                        {loanRepayments.map((pmt: any) => (
+                          <div key={pmt.id} className="p-3 bg-black/20 border border-white/5 rounded-xl flex items-center justify-between">
+                            <div>
+                              <span className="text-xs font-bold text-white block">Rs. {pmt.amount.toLocaleString()}</span>
+                              <span className="text-[8.5px] text-slate-500 mt-0.5 block">
+                                {formatNepaliDate(pmt.date)} {pmt.title ? `• ${pmt.title}` : ""}
+                              </span>
+                            </div>
+                            <span className={`text-[8px] font-black uppercase tracking-widest px-2.5 py-1 rounded-md ${
+                              pmt.status === "APPROVED"
+                                ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                                : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                            }`}>
+                              {pmt.status}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Modal Footer */}
+                <div className="p-6 border-t border-slate-900 bg-slate-900/10 flex gap-3 shrink-0">
+                  {["ACTIVE", "OVERDUE"].includes(rawLoan.status) && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenRepayFromDetails(rawLoan._id.toString())}
+                      className="flex-1 py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-emerald-500/20 transition-all active:scale-95"
+                    >
+                      Submit Repayment Request
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleCloseDetailsModal}
+                    className="flex-1 py-4 bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 border border-white/5"
+                  >
+                    Close
+                  </button>
+                </div>
+              </motion.div>
+            </div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* Apply Loan Modal Drawer */}
