@@ -122,6 +122,9 @@ export async function updateUser(id: string, formData: FormData) {
     if (formData.has("isSecondaryAdmin")) {
       updates.isSecondaryAdmin = formData.get("isSecondaryAdmin") === "true";
     }
+    if (formData.has("allowFamilySwitch")) {
+      updates.allowFamilySwitch = formData.get("allowFamilySwitch") === "true";
+    }
 
     const dobStr = formData.get("dateOfBirth") as string;
     if (dobStr) {
@@ -364,13 +367,34 @@ export async function getLinkedAccounts(userId: string) {
   try {
     await connectDB();
     const user = await User.findById(userId)
-      .populate("familyMembers.memberId", "name accountNumber profileImage isMinor advanceBalance email phoneNumber")
+      .populate("familyMembers.memberId", "name accountNumber profileImage isMinor advanceBalance email phoneNumber allowFamilySwitch")
       .lean();
 
     return { 
       success: true, 
       familyMembers: user ? JSON.parse(JSON.stringify(user.familyMembers)) : [] 
     };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+}
+
+export async function changeUserPassword(id: string, currentPass: string, newPass: string) {
+  try {
+    await connectDB();
+    const user = await User.findById(id);
+    if (!user) throw new Error("User not found");
+
+    if (user.password) {
+      const isMatch = await bcrypt.compare(currentPass, user.password);
+      if (!isMatch) {
+        throw new Error("Current password incorrect");
+      }
+    }
+
+    user.password = await bcrypt.hash(newPass, 12);
+    await user.save();
+    return { success: true };
   } catch (error: any) {
     return { success: false, error: error.message };
   }

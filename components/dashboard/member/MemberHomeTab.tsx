@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { calculateLoanStats } from "@/lib/utils/loan-calculations";
-import { getNepaliMonthRange, getNextNepaliMonth } from "@/lib/utils/nepali-date";
+import { getNepaliMonthRange, getNextNepaliMonth, adToBs } from "@/lib/utils/nepali-date";
 
 interface MemberHomeTabProps {
   memberData: any;
@@ -80,9 +80,23 @@ export default function MemberHomeTab({
       ? new Date(activeLoan.createdAt)
       : new Date();
 
+  const formatNepaliDate = (dateVal: string | Date) => {
+    const bs = adToBs(dateVal);
+    if (bs.year === 0) return "N/A";
+    return `${bs.monthName} ${bs.day}, ${bs.year}`;
+  };
+
+  const getCalendarDays = (d1: Date, d2: Date) => {
+    const npTime1 = new Date(d1.getTime() + (5 * 60 + 45) * 60 * 1000);
+    const npTime2 = new Date(d2.getTime() + (5 * 60 + 45) * 60 * 1000);
+    const startObj = new Date(Date.UTC(npTime1.getUTCFullYear(), npTime1.getUTCMonth(), npTime1.getUTCDate()));
+    const endObj = new Date(Date.UTC(npTime2.getUTCFullYear(), npTime2.getUTCMonth(), npTime2.getUTCDate()));
+    return Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24));
+  };
+
   const dueDate = activeLoan?.dueDate ? new Date(activeLoan.dueDate) : new Date();
-  const totalDays = loanStats?.totalDays || Math.max(1, Math.ceil((dueDate.getTime() - activatedDate.getTime()) / (1000 * 60 * 60 * 24)));
-  const elapsedDays = Math.max(0, Math.ceil((new Date().getTime() - activatedDate.getTime()) / (1000 * 60 * 60 * 24)));
+  const totalDays = loanStats?.totalDays || Math.max(1, getCalendarDays(activatedDate, dueDate));
+  const elapsedDays = Math.max(0, getCalendarDays(activatedDate, new Date()));
   const timeProgressPercent = Math.min(100, Math.max(0, Math.round((elapsedDays / totalDays) * 100)));
 
   const principalPaid = loanStats ? (activeLoan.principalAmount - (loanStats.principalOutstanding || 0)) : 0;
@@ -91,7 +105,20 @@ export default function MemberHomeTab({
   const percentPaid = principalAmount > 0 ? Math.min(100, Math.max(0, Math.round((principalPaid / principalAmount) * 100))) : 0;
 
   const accruedInterest = loanStats ? (loanStats.totalInterest || 0) : 0;
-  const runningInterestDays = loanStats ? (loanStats.totalDays || 0) : elapsedDays;
+
+  const lastRenewal = activeLoan?.renewalHistory && activeLoan.renewalHistory.length > 0
+    ? activeLoan.renewalHistory[activeLoan.renewalHistory.length - 1]
+    : null;
+
+  const finalEndDate = (activeLoan?.status === "COMPLETED" && activeLoan.completedAt)
+    ? new Date(activeLoan.completedAt)
+    : (activeLoan?.status === "DELETED" && activeLoan.deletedAt)
+      ? new Date(activeLoan.deletedAt)
+      : new Date();
+
+  const runningInterestDays = lastRenewal
+    ? Math.max(0, getCalendarDays(new Date(lastRenewal.date), finalEndDate))
+    : (loanStats ? (loanStats.totalDays || 0) : elapsedDays);
   const principalOutstanding = loanStats ? (loanStats.principalOutstanding || 0) : principalAmount;
   const outstandingInterest = loanStats ? ((loanStats.unpaidBaseInterest || 0) + (loanStats.unpaidPenaltyInterest || 0)) : 0;
   const unpaidSC = loanStats ? (loanStats.unpaidSC || 0) : (activeLoan?.serviceChargeAmount || 0);
@@ -481,13 +508,27 @@ export default function MemberHomeTab({
                 <div className="text-right flex flex-col justify-between">
                   <div>
                     <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">Interest Days</span>
-                    <span className="text-xs font-black text-slate-200 mt-1 inline-block bg-slate-950 border border-slate-900 px-2.5 py-0.5 rounded-full">
-                      {runningInterestDays} Days Running
-                    </span>
+                    <div className="mt-1 space-y-1">
+                      <span className="text-xs font-black text-slate-200 inline-block bg-slate-950 border border-slate-900 px-2.5 py-0.5 rounded-full">
+                        {runningInterestDays} Days Running
+                      </span>
+                      {lastRenewal && (
+                        <>
+                          <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-1">
+                            Lifetime: <span className="text-indigo-400">{totalDays} Days</span>
+                          </div>
+                          <div className="text-[8px] text-amber-400 font-black uppercase tracking-wider mt-0.5">
+                            Renewed: {formatNepaliDate(lastRenewal.date)}
+                          </div>
+                        </>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-2">
-                    Term Duration: <span className="text-indigo-400">{totalDays} Days</span>
-                  </div>
+                  {!lastRenewal && (
+                    <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wide mt-2">
+                      Term Duration: <span className="text-indigo-400">{totalDays} Days</span>
+                    </div>
+                  )}
                 </div>
               </div>
 

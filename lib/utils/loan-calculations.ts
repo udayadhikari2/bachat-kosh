@@ -81,8 +81,10 @@ export function calculateLoanStats(loan: any, forceEndDate?: Date) {
   let exceedDaysTotal = 0;
 
   const getCalendarDays = (d1: Date, d2: Date) => {
-    const startObj = new Date(d1.getFullYear(), d1.getMonth(), d1.getDate());
-    const endObj = new Date(d2.getFullYear(), d2.getMonth(), d2.getDate());
+    const npTime1 = new Date(d1.getTime() + (5 * 60 + 45) * 60 * 1000);
+    const npTime2 = new Date(d2.getTime() + (5 * 60 + 45) * 60 * 1000);
+    const startObj = new Date(Date.UTC(npTime1.getUTCFullYear(), npTime1.getUTCMonth(), npTime1.getUTCDate()));
+    const endObj = new Date(Date.UTC(npTime2.getUTCFullYear(), npTime2.getUTCMonth(), npTime2.getUTCDate()));
     return Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24));
   };
 

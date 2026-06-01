@@ -12,12 +12,14 @@ import {
   ArrowRight,
   TrendingUp,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  Users,
+  Lock
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { adToBs, getCurrentNepaliDate, parseNepaliMonth, getDaysInMonth, bsToAd, getNepaliMonthRange, getPreviousNepaliMonth, getNextNepaliMonth, compareNepaliMonths, getNepaliMonthStartAd } from "@/lib/utils/nepali-date";
 import NepaliDatePicker from "./NepaliDatePicker";
-import { createDeposit } from "@/lib/actions/deposit";
+import { createDeposit, createMultipleDeposits } from "@/lib/actions/deposit";
 import { getUserBalance } from "@/lib/actions/user";
 import { getOrganization } from "@/lib/actions/organization";
 import { useSession } from "next-auth/react";
@@ -53,8 +55,15 @@ export default function SubmitDepositForm({
   const [remarks, setRemarks] = useState("");
   const [proof, setProof] = useState("");
   const [isInitialized, setIsInitialized] = useState(false);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
 
   const { data: session } = useSession();
+
+  useEffect(() => {
+    if (memberData?.user?._id) {
+      setSelectedMemberIds([memberData.user._id]);
+    }
+  }, [memberData]);
 
   // 1. Calculate unpaid months for dropdown
   const unpaidMonths = (() => {
@@ -187,11 +196,11 @@ export default function SubmitDepositForm({
         fine = monthsDiff * orgConfig.lateFee;
       }
       
-      setInputAmount(requiredBase + fine);
+      setInputAmount(selectedMemberIds.length * (requiredBase + fine));
     } catch (e) {
       console.error(e);
     }
-  }, [bsMonth, paymentDate, depositType, orgConfig, defaultAmount]);
+  }, [bsMonth, paymentDate, depositType, orgConfig, defaultAmount, selectedMemberIds.length]);
 
   const requiredBase = depositType === "MONTHLY" ? (orgConfig?.monthlyDepositAmount || defaultAmount || 0) : 0;
 
@@ -219,7 +228,7 @@ export default function SubmitDepositForm({
       }
       setFineApplied(fine);
 
-      const totalRequired = requiredBase + fine;
+      const totalRequired = selectedMemberIds.length * (requiredBase + fine);
       const totalProvided = (inputAmount || 0) + (useCredit ? creditUsed : 0);
       
       if (totalProvided < totalRequired) {
@@ -230,10 +239,21 @@ export default function SubmitDepositForm({
     } catch (e) {
       console.error("Calculation error:", e);
     }
-  }, [paymentDate, bsMonth, inputAmount, creditUsed, useCredit, depositType, orgConfig, requiredBase]);
+  }, [paymentDate, bsMonth, inputAmount, creditUsed, useCredit, depositType, orgConfig, requiredBase, selectedMemberIds.length]);
 
-  const totalRequired = requiredBase + fineApplied;
+  const totalRequired = selectedMemberIds.length * (requiredBase + fineApplied);
   const isInsufficient = depositType === "MONTHLY" && ((inputAmount || 0) + (useCredit ? creditUsed : 0)) < totalRequired;
+
+  const monthDepositStatus = (() => {
+    if (!memberData?.timeline || !bsMonth) return null;
+    const match = memberData.timeline.find(
+      (item: any) =>
+        item.type === "DEPOSIT" &&
+        item.month === bsMonth &&
+        (item.status === "PENDING" || item.status === "APPROVED")
+    );
+    return match ? (match.status as "PENDING" | "APPROVED") : null;
+  })();
 
   const minDate = (() => {
     if (!bsMonth) return undefined;
@@ -264,26 +284,76 @@ export default function SubmitDepositForm({
       return;
     }
 
-    const result = await createDeposit({
-      userId: user.id,
-      organizationId: user.organizationId,
-      amount: inputAmount || 0,
-      advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
-      creditUsed: useCredit ? creditUsed : 0,
-      month: bsMonth,
-      depositType,
-      depositDate: paymentDate,
-      remarks,
-      proof: (useCredit && creditUsed >= totalRequired)
-        ? "CREDIT_PAYMENT"
-        : (proof || "https://placehold.co/600x400/000000/FFFFFF/png?text=Transaction+Proof")
-    });
+    const proofStr = (useCredit && creditUsed >= totalRequired)
+      ? "CREDIT_PAYMENT"
+      : (proof || "https://placehold.co/600x400/000000/FFFFFF/png?text=Transaction+Proof");
+
+    let result;
+
+    if (selectedMemberIds.length <= 1) {
+      result = await createDeposit({
+        userId: selectedMemberIds[0] || user.id,
+        organizationId: user.organizationId,
+        amount: inputAmount || 0,
+        advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
+        creditUsed: useCredit ? creditUsed : 0,
+        month: bsMonth,
+        depositType,
+        depositDate: paymentDate,
+        remarks,
+        proof: proofStr
+      });
+    } else {
+      const totalRequiredPerPerson = requiredBase + fineApplied;
+      const mainUserId = selectedMemberIds.includes(user.id) ? user.id : selectedMemberIds[0];
+      const familyMembersCount = selectedMemberIds.length - 1;
+      const familyRequiredTotal = familyMembersCount * totalRequiredPerPerson;
+
+      const payloads = selectedMemberIds.map((memberId) => {
+        const isMain = memberId === mainUserId;
+        if (isMain) {
+          return {
+            userId: memberId,
+            organizationId: user.organizationId,
+            amount: inputAmount - familyRequiredTotal,
+            advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
+            creditUsed: useCredit ? creditUsed : 0,
+            month: bsMonth,
+            depositType,
+            depositDate: paymentDate,
+            remarks: remarks ? `${remarks} (Batch Payment - Main)` : "Batch Payment - Main",
+            proof: proofStr
+          };
+        } else {
+          return {
+            userId: memberId,
+            organizationId: user.organizationId,
+            amount: totalRequiredPerPerson,
+            advancedPayment: 0,
+            creditUsed: 0,
+            month: bsMonth,
+            depositType,
+            depositDate: paymentDate,
+            remarks: remarks ? `${remarks} (Batch Payment for family member)` : "Batch Payment for family member",
+            proof: proofStr
+          };
+        }
+      });
+
+      result = await createMultipleDeposits(payloads);
+    }
 
     if (result.success) {
-      setSuccess(true);
-      setTimeout(onClose, 2000);
+      const resAny = result as any;
+      if (resAny.errors && resAny.errors.length > 0) {
+        const errorMsg = resAny.errors.map((e: any) => e.error).join(", ");
+        setError(errorMsg || "Failed to submit some deposits");
+      } else {
+        setSuccess(true);
+        setTimeout(onClose, 2000);
+      }
     } else {
-      setError(result.error || "Failed to submit deposit");
+      setError((result as any).error || "Failed to submit deposit");
     }
     setLoading(false);
   };
@@ -372,6 +442,91 @@ export default function SubmitDepositForm({
             </div>
           )}
 
+          {/* Family Selection Panel */}
+          {memberData?.user?.familyMembers && memberData.user.familyMembers.length > 0 && (
+            <div className="bg-white/[0.02] border border-white/5 p-5 rounded-[32px] space-y-3">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4 text-emerald-400" />
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                  Deposit for Members
+                </label>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {/* Self (Active Member profile) */}
+                <div className="flex items-center justify-between p-3.5 bg-emerald-500/10 border border-emerald-500/25 rounded-2xl">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-6 h-6 rounded-lg bg-emerald-500/20 flex items-center justify-center text-[10px] font-black text-emerald-400">
+                      {memberData.user.name.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
+                    </div>
+                    <span className="text-xs font-bold text-white truncate max-w-[150px]">
+                      {memberData.user.name} (Self)
+                    </span>
+                  </div>
+                  <div className="w-4 h-4 rounded-md border border-emerald-500/30 bg-emerald-500/20 flex items-center justify-center">
+                    <div className="w-2 h-2 rounded bg-emerald-400" />
+                  </div>
+                </div>
+
+                {/* Family Members */}
+                {memberData.user.familyMembers.map((m: any) => {
+                  const child = m.memberId;
+                  if (!child) return null;
+                  const isLocked = !child.isMinor && !child.allowFamilySwitch;
+                  const isChecked = selectedMemberIds.includes(child._id);
+                  return (
+                    <button
+                      key={child._id}
+                      type="button"
+                      disabled={isLocked}
+                      onClick={() => {
+                        if (isLocked) return;
+                        if (isChecked) {
+                          setSelectedMemberIds(selectedMemberIds.filter((id) => id !== child._id));
+                        } else {
+                          setSelectedMemberIds([...selectedMemberIds, child._id]);
+                        }
+                      }}
+                      className={`flex items-center justify-between p-3.5 border rounded-2xl select-none transition-all text-left ${
+                        isLocked
+                          ? "bg-black/10 border-white/5 opacity-40 cursor-not-allowed text-slate-500"
+                          : isChecked
+                            ? "bg-indigo-500/10 border-indigo-500/25 text-indigo-400 cursor-pointer"
+                            : "bg-black/20 border-white/5 text-slate-400 hover:border-white/10 hover:text-white cursor-pointer"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-black ${
+                          isLocked
+                            ? "bg-slate-900 text-slate-600"
+                            : isChecked
+                              ? "bg-indigo-500/20 text-indigo-400"
+                              : "bg-slate-800 text-slate-400"
+                        }`}>
+                          {child.name.split(" ").map((n: string) => n[0]).join("").toUpperCase()}
+                        </div>
+                        <span className="text-xs font-bold truncate max-w-[150px]">
+                          {child.name}
+                        </span>
+                      </div>
+                      
+                      {isLocked ? (
+                        <div className="p-1 bg-rose-500/10 rounded text-rose-400/70 border border-rose-500/10" title="Access Control Locked">
+                          <Lock className="w-3.5 h-3.5 shrink-0" />
+                        </div>
+                      ) : (
+                        <div className={`w-4 h-4 rounded-md border flex items-center justify-center transition-all ${
+                          isChecked ? "border-indigo-500/30 bg-indigo-500/20" : "border-white/10 bg-slate-900"
+                        }`}>
+                          {isChecked && <div className="w-2 h-2 rounded bg-indigo-400" />}
+                        </div>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/[0.03] border border-white/5 p-4 rounded-2xl flex flex-col justify-center relative overflow-hidden group">
               <p className="text-[9px] text-slate-500 uppercase font-black tracking-widest leading-none mb-1.5">Target Month</p>
@@ -404,6 +559,38 @@ export default function SubmitDepositForm({
           </div>
 
           <AnimatePresence mode="wait">
+            {monthDepositStatus && (
+              <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
+                <div className={`p-5 border rounded-[32px] flex items-center gap-5 ${
+                  monthDepositStatus === "PENDING"
+                    ? "bg-amber-500/10 border-amber-500/20 text-amber-400"
+                    : "bg-rose-500/10 border-rose-500/20 text-rose-400"
+                }`}>
+                  <div className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${
+                    monthDepositStatus === "PENDING"
+                      ? "bg-amber-500/20 border-amber-500/20 text-amber-500"
+                      : "bg-rose-500/20 border-rose-500/20 text-rose-500"
+                  }`}>
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <p className={`text-[11px] font-black uppercase tracking-widest ${
+                      monthDepositStatus === "PENDING" ? "text-amber-500" : "text-rose-500"
+                    }`}>
+                      Duplicate Deposit Blocked
+                    </p>
+                    <p className="text-xs opacity-80 font-bold mt-0.5">
+                      {monthDepositStatus === "PENDING"
+                        ? `A deposit for ${bsMonth} is already pending verification. Please wait for admin approval.`
+                        : `A deposit for ${bsMonth} has already been approved and recorded.`}
+                    </p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <AnimatePresence mode="wait">
             {fineApplied > 0 && (
               <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} className="overflow-hidden">
                 <div className="p-5 bg-rose-500/10 border border-rose-500/20 rounded-[32px] flex items-center gap-5">
@@ -412,7 +599,10 @@ export default function SubmitDepositForm({
                   </div>
                   <div>
                     <p className="text-[11px] font-black text-rose-500 uppercase tracking-widest">Late Fine Active</p>
-                    <p className="text-xs text-rose-400/70 font-bold mt-0.5">Rs. {fineApplied} added to required total for overdue submission.</p>
+                    <p className="text-xs text-rose-400/70 font-bold mt-0.5">
+                      Rs. {fineApplied * selectedMemberIds.length} added to required total for overdue submission
+                      {selectedMemberIds.length > 1 && ` (${selectedMemberIds.length} members x Rs. ${fineApplied})`}.
+                    </p>
                   </div>
                 </div>
               </motion.div>
@@ -548,10 +738,24 @@ export default function SubmitDepositForm({
           </div>
 
           <div className="pt-6">
-            <button type="submit" disabled={loading || isInsufficient} className="w-full group relative py-6 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-black uppercase tracking-[0.3em] rounded-[32px] shadow-[0_20px_50px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-4 active:scale-95 disabled:opacity-30">
+            <button
+              type="submit"
+              disabled={loading || isInsufficient || !!monthDepositStatus}
+              className="w-full group relative py-6 bg-gradient-to-r from-emerald-600 to-emerald-500 text-white font-black uppercase tracking-[0.3em] rounded-[32px] shadow-[0_20px_50px_rgba(16,185,129,0.3)] transition-all flex items-center justify-center gap-4 active:scale-95 disabled:opacity-30"
+            >
               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:animate-shine pointer-events-none" />
-              {loading ? <Loader2 className="w-6 h-6 animate-spin" /> : <span>{isInsufficient ? "Insufficient Assets" : "Submit Transaction"}</span>}
-              {!isInsufficient && !loading && <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />}
+              {loading ? (
+                <Loader2 className="w-6 h-6 animate-spin" />
+              ) : monthDepositStatus ? (
+                <span>Duplicate Blocked</span>
+              ) : isInsufficient ? (
+                <span>Insufficient Assets</span>
+              ) : (
+                <span>Submit Transaction</span>
+              )}
+              {!isInsufficient && !monthDepositStatus && !loading && (
+                <ArrowRight className="w-5 h-5 group-hover:translate-x-2 transition-transform" />
+              )}
             </button>
           </div>
         </form>

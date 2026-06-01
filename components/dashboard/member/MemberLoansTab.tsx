@@ -560,7 +560,27 @@ export default function MemberLoansTab({
           const elapsedDays = Math.max(0, Math.ceil((new Date().getTime() - activatedDate.getTime()) / (1000 * 60 * 60 * 24)));
           const totalDays = loanStats?.totalDays || Math.max(1, Math.ceil((dueDate.getTime() - activatedDate.getTime()) / (1000 * 60 * 60 * 24)));
           
-          const runningInterestDays = loanStats ? (loanStats.totalDays || 0) : elapsedDays;
+          const getCalendarDays = (d1: Date, d2: Date) => {
+             const npTime1 = new Date(d1.getTime() + (5 * 60 + 45) * 60 * 1000);
+             const npTime2 = new Date(d2.getTime() + (5 * 60 + 45) * 60 * 1000);
+             const startObj = new Date(Date.UTC(npTime1.getUTCFullYear(), npTime1.getUTCMonth(), npTime1.getUTCDate()));
+             const endObj = new Date(Date.UTC(npTime2.getUTCFullYear(), npTime2.getUTCMonth(), npTime2.getUTCDate()));
+             return Math.round((endObj.getTime() - startObj.getTime()) / (1000 * 60 * 60 * 24));
+           };
+
+          const lastRenewal = rawLoan.renewalHistory && rawLoan.renewalHistory.length > 0
+            ? rawLoan.renewalHistory[rawLoan.renewalHistory.length - 1]
+            : null;
+
+          const finalEndDate = (rawLoan.status === "COMPLETED" && rawLoan.completedAt)
+            ? new Date(rawLoan.completedAt)
+            : (rawLoan.status === "DELETED" && rawLoan.deletedAt)
+              ? new Date(rawLoan.deletedAt)
+              : new Date();
+
+          const runningInterestDays = lastRenewal
+            ? Math.max(0, getCalendarDays(new Date(lastRenewal.date), finalEndDate))
+            : (loanStats ? (loanStats.totalDays || 0) : elapsedDays);
           const principalOutstanding = loanStats ? (loanStats.principalOutstanding || 0) : rawLoan.principalAmount;
           const outstandingInterest = loanStats ? ((loanStats.unpaidBaseInterest || 0) + (loanStats.unpaidPenaltyInterest || 0)) : 0;
           const unpaidSC = loanStats ? (loanStats.unpaidSC || 0) : (rawLoan.serviceChargeAmount || 0);
@@ -658,15 +678,20 @@ export default function MemberLoansTab({
                         <span className="text-base font-black text-white">{runningInterestDays} Days</span>
                         <span className="text-[9px] text-slate-400 font-bold uppercase">Running</span>
                       </div>
-                      <span className="text-[8px] text-slate-500 mt-1 block">Interest calculation days since activation/renewal.</span>
+                      <span className="text-[8px] text-slate-500 mt-1 block">Interest calculation days since last renewal/activation.</span>
+                      {lastRenewal && (
+                        <span className="text-[8.5px] text-amber-400 font-black uppercase mt-1 block">
+                          Renewed: {formatNepaliDate(lastRenewal.date)}
+                        </span>
+                      )}
                     </div>
                     <div>
-                      <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">Contractual Loan Term</span>
+                      <span className="text-[8px] text-slate-500 font-black uppercase tracking-widest block">Total Lifetime Days</span>
                       <div className="flex items-baseline gap-2 mt-1">
                         <span className="text-base font-black text-white">{totalDays} Days</span>
-                        <span className="text-[9px] text-slate-400 font-bold uppercase">Term</span>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase">Lifetime</span>
                       </div>
-                      <span className="text-[8px] text-slate-500 mt-1 block">Total contractual term length of current cycle.</span>
+                      <span className="text-[8px] text-slate-500 mt-1 block">Total accumulated interest days over the entire loan cycle.</span>
                     </div>
                   </div>
 

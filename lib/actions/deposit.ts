@@ -247,6 +247,18 @@ export async function createDeposit(data: {
   try {
     await connectDB();
 
+    if (data.depositType === "MONTHLY") {
+      const existing = await Deposit.findOne({
+        userId: data.userId,
+        month: data.month,
+        depositType: "MONTHLY",
+        status: { $in: ["PENDING", "APPROVED"] }
+      });
+      if (existing) {
+        throw new Error(`A deposit for ${data.month} is already ${existing.status.toLowerCase()}.`);
+      }
+    }
+
     const org = await Organization.findById(data.organizationId);
     if (!org) throw new Error("Organization not found");
 
@@ -371,6 +383,19 @@ export async function createMultipleDeposits(payloads: Array<{
         const org = await Organization.findById(data.organizationId);
         if (!org) throw new Error("Organization not found");
 
+        if (data.depositType === "MONTHLY") {
+          const existing = await Deposit.findOne({
+            userId: data.userId,
+            month: data.month,
+            depositType: "MONTHLY",
+            status: { $in: ["PENDING", "APPROVED"] }
+          });
+          if (existing) {
+            const user = await User.findById(data.userId).select("name");
+            throw new Error(`A deposit for ${data.month} is already ${existing.status.toLowerCase()} for ${user?.name || "member"}.`);
+          }
+        }
+
         let fineApplied = 0;
         let finalAdvancedPayment = data.advancedPayment || 0;
         let finalAmount = data.amount;
@@ -438,7 +463,7 @@ export async function createMultipleDeposits(payloads: Array<{
           senderId: data.userId,
           recipientId: data.organizationId,
           title: "New Transaction Submission",
-          message: `A new ${data.depositType} entry of Rs. ${data.amount} for ${data.month} has been logged. ${fineApplied > 0 ? `(Fine Applied: Rs. ${fineApplied})` : ""}`,
+          message: `A new ${data.depositType} entry of Rs. ${finalAmount} for ${data.month} has been logged. ${fineApplied > 0 ? `(Fine Applied: Rs. ${fineApplied})` : ""}`,
           type: "INFO",
           isRead: false
         });
@@ -1357,5 +1382,52 @@ export async function getPendingDepositCount(organizationId: string) {
     return { success: true, count };
   } catch (error: any) {
     return { success: false, count: 0 };
+  }
+}
+
+export async function cancelPendingDeposit(depositId: string) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      throw new Error("Unauthorized: Session expired or invalid");
+    }
+
+    await connectDB();
+
+    const dep = await Deposit.findById(depositId);
+    if (!dep) {
+      throw new Error("Deposit record not found");
+    }
+
+    if (dep.status !== "PENDING") {
+      throw new Error("Cannot cancel a deposit that is not pending verification");
+    }
+
+    const loggedInUserId = (session.user as any).id;
+    const user = await User.findById(loggedInUserId);
+    if (!user) throw new Error("User profile not found");
+
+    const isSelf = dep.userId.toString() === user._id.toString();
+    const isFamily = user.familyMembers.some(
+      (m: any) => m.memberId.toString() === dep.userId.toString()
+    );
+
+    if (!isSelf && !isFamily) {
+      throw new Error("Unauthorized: You do not have permission to cancel this deposit");
+    }
+
+    await Deposit.findByIdAndDelete(depositId);
+    await Notification.deleteMany({ relatedId: depositId });
+
+    revalidatePath("/dashboard/users");
+    revalidatePath("/dashboard/loans");
+    revalidatePath("/dashboard/deposits");
+    revalidatePath("/dashboard/deposits/aggregation");
+    revalidatePath("/dashboard", "layout");
+
+    return { success: true };
+  } catch (error: any) {
+    console.error("[ERROR] cancelPendingDeposit:", error);
+    return { success: false, error: error.message };
   }
 }

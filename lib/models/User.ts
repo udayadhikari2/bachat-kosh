@@ -32,6 +32,7 @@ export interface IUser extends Document {
     memberId: mongoose.Types.ObjectId; 
     relationship: string; 
   }[];
+  allowFamilySwitch: boolean;
   
   createdAt: Date;
   updatedAt: Date;
@@ -79,6 +80,7 @@ const UserSchema: Schema = new Schema(
         relationship: { type: String },
       },
     ],
+    allowFamilySwitch: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

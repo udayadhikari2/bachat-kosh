@@ -16,7 +16,9 @@ export async function getMemberActivity(userId: string) {
     await connectDB();
 
     // 1. Fetch User Info
-    const user = await User.findById(userId).lean();
+    const user = await User.findById(userId)
+      .populate("familyMembers.memberId", "name accountNumber profileImage isMinor advanceBalance email phoneNumber allowFamilySwitch")
+      .lean();
     if (!user) throw new Error("Member not found");
 
     // 2. Fetch All Deposits

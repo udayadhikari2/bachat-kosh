@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import { getUsersByOrg } from "@/lib/actions/user";
 import { transferMemberCreditDirect } from "@/lib/actions/aggregation";
+import { cancelPendingDeposit } from "@/lib/actions/deposit";
 import { getNepaliMonthRange, getPreviousNepaliMonth, getNextNepaliMonth, compareNepaliMonths, adToBs } from "@/lib/utils/nepali-date";
 import toast from "react-hot-toast";
 
@@ -50,6 +51,33 @@ export default function MemberDepositTab({
   const [expandedItemId, setExpandedItemId] = useState<string | null>(null);
   // View proof modal state
   const [activeProofUrl, setActiveProofUrl] = useState<string | null>(null);
+  const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const [showCancelConfirmModal, setShowCancelConfirmModal] = useState(false);
+  const [cancelingDepositId, setCancelingDepositId] = useState<string | null>(null);
+
+  const handleCancelDeposit = (depositId: string) => {
+    setCancelingDepositId(depositId);
+    setShowCancelConfirmModal(true);
+  };
+
+  const confirmCancelDeposit = async (depositId: string) => {
+    setCancelingId(depositId);
+    try {
+      const res = await cancelPendingDeposit(depositId);
+      if (res.success) {
+        toast.success("Deposit cancelled successfully.");
+        setShowCancelConfirmModal(false);
+        setCancelingDepositId(null);
+        onRefresh();
+      } else {
+        toast.error(res.error || "Failed to cancel deposit.");
+      }
+    } catch (err) {
+      toast.error("Failed to cancel deposit.");
+    } finally {
+      setCancelingId(null);
+    }
+  };
 
   // Unpaid months calculations
   const unpaidMonths = (() => {
@@ -506,6 +534,35 @@ export default function MemberDepositTab({
                             </div>
                           )}
 
+                          {/* Cancel submission action */}
+                          {item.status === "PENDING" && (
+                            <div className="flex items-center justify-between p-4 bg-rose-500/5 border border-rose-500/10 rounded-2xl">
+                              <div className="flex items-center gap-3">
+                                <AlertTriangle className="w-5 h-5 text-rose-400" />
+                                <div>
+                                  <span className="text-xs text-rose-400 font-black uppercase tracking-wider block">Cancel Transaction</span>
+                                  <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-0.5 block">Withdraw this pending submission before admin review</span>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                disabled={cancelingId === item.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCancelDeposit(item.id);
+                                }}
+                                className="px-5 py-2.5 bg-rose-500/10 hover:bg-rose-500 text-rose-400 hover:text-white border border-rose-500/20 hover:border-transparent rounded-xl text-xs font-black uppercase tracking-wider transition-all flex items-center gap-1.5 disabled:opacity-30"
+                              >
+                                {cancelingId === item.id ? (
+                                  <Loader2 className="w-4 h-4 animate-spin" />
+                                ) : (
+                                  <XCircle className="w-4 h-4" />
+                                )}
+                                Cancel Submission
+                              </button>
+                            </div>
+                          )}
+
                           {/* Proof Evidence Preview button */}
                           {item.proof && (
                             <div className="flex items-center justify-between p-4 bg-slate-900/50 border border-white/5 rounded-2xl">
@@ -713,6 +770,61 @@ export default function MemberDepositTab({
                     <p className="mt-2 text-white font-mono bg-black/30 p-4 rounded-xl border border-white/5">{activeProofUrl}</p>
                   </div>
                 )}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Cancellation Confirmation Modal */}
+      <AnimatePresence>
+        {showCancelConfirmModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-xl">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 10 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 10 }}
+              className="w-full max-w-md bg-slate-900 border border-white/10 rounded-[32px] p-8 text-center shadow-[0_0_100px_rgba(239,68,68,0.1)] relative overflow-hidden"
+            >
+              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-rose-500 to-transparent" />
+              
+              <div className="w-16 h-16 bg-rose-500/10 rounded-2xl border border-rose-500/20 flex items-center justify-center mx-auto mb-6 relative">
+                <AlertTriangle className="w-8 h-8 text-rose-500 animate-pulse" />
+              </div>
+
+              <h2 className="text-xl font-black text-white mb-3 tracking-tight uppercase">Cancel Transaction?</h2>
+              <p className="text-slate-400 text-sm font-medium leading-relaxed mb-8">
+                Are you sure you want to cancel this pending deposit? This action cannot be undone.
+              </p>
+
+              <div className="grid grid-cols-2 gap-3.5">
+                <button
+                  type="button"
+                  disabled={cancelingId !== null}
+                  onClick={() => {
+                    setShowCancelConfirmModal(false);
+                    setCancelingDepositId(null);
+                  }}
+                  className="py-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-2xl text-xs font-black uppercase tracking-widest text-slate-400 hover:text-white transition-all disabled:opacity-30 active:scale-95"
+                >
+                  No, Keep It
+                </button>
+                <button
+                  type="button"
+                  disabled={cancelingId !== null}
+                  onClick={async () => {
+                    if (cancelingDepositId) {
+                      await confirmCancelDeposit(cancelingDepositId);
+                    }
+                  }}
+                  className="py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-2xl text-xs font-black uppercase tracking-widest transition-all shadow-lg shadow-rose-500/20 disabled:opacity-30 active:scale-95 flex items-center justify-center gap-2"
+                >
+                  {cancelingId !== null ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <span>Yes, Cancel It</span>
+                  )}
+                </button>
               </div>
             </motion.div>
           </div>

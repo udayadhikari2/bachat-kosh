@@ -210,10 +210,10 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
                      <Calendar className="w-32 h-32" />
                   </div>
                   
-                  <div className="grid grid-cols-2 gap-8 relative z-10">
+                   <div className="grid grid-cols-2 gap-8 relative z-10">
                     <DateBox label="Initial Activation" date={activatedDate?.toLocaleDateString()} nepali={nepaliActivated} />
-                    <DateBox label="Total Tenor" date={`${totalDays} Days`} nepali="Since Inundation" highlight />
-                    <DateBox label="Last Activity" date={lastEventDate?.toLocaleDateString()} nepali={nepaliLastEvent} />
+                    <DateBox label="Total Tenor (Lifetime)" date={`${totalDays} Days`} nepali="Accumulated" highlight />
+                    <DateBox label="Last Renewal / Event" date={lastEventDate?.toLocaleDateString()} nepali={nepaliLastEvent} />
                     <DateBox 
                       label="Current Deadline" 
                       date={effectiveDueDate ? effectiveDueDate.toLocaleDateString() : "Pending Activation"} 
@@ -221,11 +221,11 @@ export default function LoanDetailsModal({ loan, onClose }: LoanDetailsModalProp
                       warning={effectiveDueDate ? new Date() > effectiveDueDate : false} 
                     />
                   </div>
-
+ 
                   <div className="pt-8 border-t border-white/5 flex items-center justify-between relative z-10">
                      <div>
-                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Dormancy Status</p>
-                        <p className="text-sm font-black text-white">{daysSinceLastEvent} Days <span className="text-slate-500 font-medium">Since Last Event</span></p>
+                        <p className="text-[10px] text-slate-500 font-black uppercase tracking-widest mb-1">Interest Running Status</p>
+                        <p className="text-sm font-black text-white">{daysSinceLastEvent} Days <span className="text-slate-500 font-medium">{lastRenewal ? "Since Last Renewal" : "Since Activation"}</span></p>
                      </div>
                      <div className="w-12 h-12 bg-white/5 rounded-2xl flex items-center justify-center border border-white/5">
                         <Clock className="w-5 h-5 text-slate-600" />
