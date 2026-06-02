@@ -27,8 +27,16 @@ if (!cached) {
 }
 
 async function connectDB() {
-  // Return existing connection immediately
-  if (cached.conn) return cached.conn;
+  // Return existing connection immediately if connected
+  if (cached.conn && mongoose.connection.readyState === 1) {
+    return cached.conn;
+  }
+
+  // If connection has been closed, reset cached states to force reconnection
+  if (mongoose.connection.readyState === 0) {
+    cached.conn = null;
+    cached.promise = null;
+  }
 
   if (!cached.promise) {
     const opts = {
