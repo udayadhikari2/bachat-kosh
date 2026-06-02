@@ -356,18 +356,21 @@ export async function createDeposit(data: {
   }
 }
 
-export async function createMultipleDeposits(payloads: Array<{
-  userId: string;
-  organizationId: string;
-  amount: number;
-  advancedPayment?: number;
-  month: string;
-  depositType: "MONTHLY" | "SERVICE_CHARGE" | "LOAN_INTEREST" | "ADVANCE" | "NAV" | "MISCELLANEOUS";
-  depositDate: string;
-  proof: string;
-  creditUsed?: number;
-  remarks?: string;
-}>) {
+export async function createMultipleDeposits(
+  payloads: Array<{
+    userId: string;
+    organizationId: string;
+    amount: number;
+    advancedPayment?: number;
+    month: string;
+    depositType: "MONTHLY" | "SERVICE_CHARGE" | "LOAN_INTEREST" | "ADVANCE" | "NAV" | "MISCELLANEOUS";
+    depositDate: string;
+    proof?: string;
+    creditUsed?: number;
+    remarks?: string;
+  }>,
+  sharedProof?: string
+) {
   try {
     if (!payloads || payloads.length === 0) return { success: true, count: 0 };
     await connectDB();
@@ -449,7 +452,7 @@ export async function createMultipleDeposits(payloads: Array<{
           month: data.month,
           depositDate: data.depositDate,
           depositType: data.depositType,
-          proof: data.proof,
+          proof: data.proof || sharedProof || "",
           remarks: data.remarks,
           fineApplied,
           creditUsed: data.creditUsed || 0,

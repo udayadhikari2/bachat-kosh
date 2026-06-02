@@ -271,91 +271,95 @@ export default function SubmitDepositForm({
     setLoading(true);
     setError("");
 
-    const user = session?.user as any;
-    if (!user) {
-      setError("User session expired");
-      setLoading(false);
-      return;
-    }
-
-    if (useCredit && creditUsed > userBalance) {
-      setError("Not enough advance balance");
-      setLoading(false);
-      return;
-    }
-
-    const proofStr = (useCredit && creditUsed >= totalRequired)
-      ? "CREDIT_PAYMENT"
-      : (proof || "https://placehold.co/600x400/000000/FFFFFF/png?text=Transaction+Proof");
-
-    let result;
-
-    if (selectedMemberIds.length <= 1) {
-      result = await createDeposit({
-        userId: selectedMemberIds[0] || user.id,
-        organizationId: user.organizationId,
-        amount: inputAmount || 0,
-        advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
-        creditUsed: useCredit ? creditUsed : 0,
-        month: bsMonth,
-        depositType,
-        depositDate: paymentDate,
-        remarks,
-        proof: proofStr
-      });
-    } else {
-      const totalRequiredPerPerson = requiredBase + fineApplied;
-      const mainUserId = selectedMemberIds.includes(user.id) ? user.id : selectedMemberIds[0];
-      const familyMembersCount = selectedMemberIds.length - 1;
-      const familyRequiredTotal = familyMembersCount * totalRequiredPerPerson;
-
-      const payloads = selectedMemberIds.map((memberId) => {
-        const isMain = memberId === mainUserId;
-        if (isMain) {
-          return {
-            userId: memberId,
-            organizationId: user.organizationId,
-            amount: inputAmount - familyRequiredTotal,
-            advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
-            creditUsed: useCredit ? creditUsed : 0,
-            month: bsMonth,
-            depositType,
-            depositDate: paymentDate,
-            remarks: remarks ? `${remarks} (Batch Payment - Main)` : "Batch Payment - Main",
-            proof: proofStr
-          };
-        } else {
-          return {
-            userId: memberId,
-            organizationId: user.organizationId,
-            amount: totalRequiredPerPerson,
-            advancedPayment: 0,
-            creditUsed: 0,
-            month: bsMonth,
-            depositType,
-            depositDate: paymentDate,
-            remarks: remarks ? `${remarks} (Batch Payment for family member)` : "Batch Payment for family member",
-            proof: proofStr
-          };
-        }
-      });
-
-      result = await createMultipleDeposits(payloads);
-    }
-
-    if (result.success) {
-      const resAny = result as any;
-      if (resAny.errors && resAny.errors.length > 0) {
-        const errorMsg = resAny.errors.map((e: any) => e.error).join(", ");
-        setError(errorMsg || "Failed to submit some deposits");
-      } else {
-        setSuccess(true);
-        setTimeout(onClose, 2000);
+    try {
+      const user = session?.user as any;
+      if (!user) {
+        setError("User session expired");
+        setLoading(false);
+        return;
       }
-    } else {
-      setError((result as any).error || "Failed to submit deposit");
+
+      if (useCredit && creditUsed > userBalance) {
+        setError("Not enough advance balance");
+        setLoading(false);
+        return;
+      }
+
+      const proofStr = (useCredit && creditUsed >= totalRequired)
+        ? "CREDIT_PAYMENT"
+        : (proof || "https://placehold.co/600x400/000000/FFFFFF/png?text=Transaction+Proof");
+
+      let result;
+
+      if (selectedMemberIds.length <= 1) {
+        result = await createDeposit({
+          userId: selectedMemberIds[0] || user.id,
+          organizationId: user.organizationId,
+          amount: inputAmount || 0,
+          advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
+          creditUsed: useCredit ? creditUsed : 0,
+          month: bsMonth,
+          depositType,
+          depositDate: paymentDate,
+          remarks,
+          proof: proofStr
+        });
+      } else {
+        const totalRequiredPerPerson = requiredBase + fineApplied;
+        const mainUserId = selectedMemberIds.includes(user.id) ? user.id : selectedMemberIds[0];
+        const familyMembersCount = selectedMemberIds.length - 1;
+        const familyRequiredTotal = familyMembersCount * totalRequiredPerPerson;
+
+        const payloads = selectedMemberIds.map((memberId) => {
+          const isMain = memberId === mainUserId;
+          if (isMain) {
+            return {
+              userId: memberId,
+              organizationId: user.organizationId,
+              amount: inputAmount - familyRequiredTotal,
+              advancedPayment: advancedPayment > 0 ? advancedPayment : 0,
+              creditUsed: useCredit ? creditUsed : 0,
+              month: bsMonth,
+              depositType,
+              depositDate: paymentDate,
+              remarks: remarks ? `${remarks} (Batch Payment - Main)` : "Batch Payment - Main"
+            };
+          } else {
+            return {
+              userId: memberId,
+              organizationId: user.organizationId,
+              amount: totalRequiredPerPerson,
+              advancedPayment: 0,
+              creditUsed: 0,
+              month: bsMonth,
+              depositType,
+              depositDate: paymentDate,
+              remarks: remarks ? `${remarks} (Batch Payment for family member)` : "Batch Payment for family member"
+            };
+          }
+        });
+
+        result = await createMultipleDeposits(payloads, proofStr);
+      }
+
+      if (result && result.success) {
+        const resAny = result as any;
+        if (resAny.errors && resAny.errors.length > 0) {
+          const errorMsg = resAny.errors.map((e: any) => e.error).join(", ");
+          setError(errorMsg || "Failed to submit some deposits");
+        } else {
+          setSuccess(true);
+          setTimeout(onClose, 2000);
+        }
+      } else {
+        setError(result?.error || "Failed to submit deposit");
+      }
+    } catch (err: any) {
+      console.error("Submission failed:", err);
+      setError(err.message || "An unexpected error occurred during submission");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   if (success) {
